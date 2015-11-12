@@ -1,5 +1,7 @@
 package main
 
+import "fmt"
+
 var (
 	cmdReg = &command{
 		run:       runReg,
@@ -8,7 +10,7 @@ var (
 		Long: `
 Reg creates a new account at an CA specified in the config file.
 
-Default location for the config file is $HOME/.config/acme/default.json.
+Default location for the config file is %s.
 A new config will be created if one does not exist.
 
 If -gen flag is not specified, and a config file does not exist, the command
@@ -21,11 +23,16 @@ See also: goacme help config.
 		`,
 	}
 
-	// TODO: set default for -c
-	regC   = cmdReg.flag.String("c", "", "")
+	regC   *string // -c flag
 	regD   = cmdReg.flag.String("d", "https://acme-staging.api.letsencrypt.org/directory", "")
 	regGen = cmdReg.flag.Bool("gen", false, "")
 )
+
+func init() {
+	p := configPath(defaultConfig)
+	regC = cmdReg.flag.String("c", p, "")
+	cmdReg.Long = fmt.Sprintf(cmdReg.Long, p)
+}
 
 func runReg(args []string) {
 	//key, err := readKey()
