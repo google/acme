@@ -16,3 +16,7 @@ Contents of this repo:
 Until this is publish, the repo needs to be cloned in
 
     $GOPATH/src/devrel.googlesource.com/tools/goacme
+
+## License
+
+(c) Google, 2015. Licensed under [Apache-2](LICENSE) license.
