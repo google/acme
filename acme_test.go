@@ -37,21 +37,21 @@ func TestDiscover(t *testing.T) {
 		}`, reg, authz, cert, revoke)
 	}))
 	defer ts.Close()
-	c, err := Discover(nil, ts.URL)
+	ep, err := Discover(nil, ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.Endpoint.RegURL != reg {
-		t.Errorf("RegURL = %q; want %q", c.Endpoint.RegURL, reg)
+	if ep.RegURL != reg {
+		t.Errorf("RegURL = %q; want %q", ep.RegURL, reg)
 	}
-	if c.Endpoint.AuthzURL != authz {
-		t.Errorf("authzURL = %q; want %q", c.Endpoint.AuthzURL, authz)
+	if ep.AuthzURL != authz {
+		t.Errorf("authzURL = %q; want %q", ep.AuthzURL, authz)
 	}
-	if c.Endpoint.CertURL != cert {
-		t.Errorf("certURL = %q; want %q", c.Endpoint.CertURL, cert)
+	if ep.CertURL != cert {
+		t.Errorf("certURL = %q; want %q", ep.CertURL, cert)
 	}
-	if c.Endpoint.RevokeURL != revoke {
-		t.Errorf("revokeURL = %q; want %q", c.Endpoint.RevokeURL, revoke)
+	if ep.RevokeURL != revoke {
+		t.Errorf("revokeURL = %q; want %q", ep.RevokeURL, revoke)
 	}
 }
 

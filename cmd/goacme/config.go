@@ -44,6 +44,21 @@ type userConfig struct {
 	key *rsa.PrivateKey
 }
 
+// fromUserConfig creates a new goacme.Config using uc.
+// Config.TermsURI is populated only if the agreement has been accepted.
+func fromUserConfig(uc *userConfig) *goacme.Config {
+	cfg := &goacme.Config{
+		Key:      uc.key,
+		Contact:  uc.Contacts,
+		Endpoint: uc.Endpoints,
+		RegURI:   uc.Reg,
+	}
+	if uc.Accepted {
+		cfg.TermsURI = uc.Agreement
+	}
+	return cfg
+}
+
 // configPath returns local file path to a user config.
 func configPath(name string) string {
 	u, err := user.Current()
@@ -57,13 +72,12 @@ func configPath(name string) string {
 // It expects to find the key at the same location,
 // by replacing path extention with ".key".
 func readConfig(path string) (*userConfig, error) {
-	f, err := os.Open(path)
+	b, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 	uc := &userConfig{}
-	if err := json.NewDecoder(f).Decode(uc); err != nil {
+	if err := json.Unmarshal(b, uc); err != nil {
 		return nil, err
 	}
 	path = keyPath(path)

@@ -18,7 +18,6 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -114,26 +113,25 @@ func Register(client *http.Client, config *Config) error {
 	return nil
 }
 
-// Discover creates a new Config from the directory data at the given url.
-// The returned config will have only Endpoint field set.
+// Discover performs ACME server discovery using provided url and client.
 // If client argument is nil, DefaultClient will be used.
-func Discover(client *http.Client, url string) (*Config, error) {
+func Discover(client *http.Client, url string) (Endpoint, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	res, err := client.Get(url)
 	if err != nil {
-		return nil, err
+		return Endpoint{}, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return nil, responseError(res)
+		return Endpoint{}, responseError(res)
 	}
 	var ep Endpoint
-	if err := json.NewDecoder(res.Body).Decode(&ep); err != nil {
-		return nil, fmt.Errorf("discover: %v", err)
+	if json.NewDecoder(res.Body).Decode(&ep); err != nil {
+		return Endpoint{}, err
 	}
-	return &Config{Endpoint: ep}, nil
+	return ep, nil
 }
 
 func fetchNonce(client *http.Client, url string) (string, error) {
