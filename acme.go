@@ -18,6 +18,7 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -46,6 +47,26 @@ type Config struct {
 	Endpoint Endpoint
 	RegURI   string
 	TermsURI string
+}
+
+// Challenge encodes a returned CA challenge.
+type Challenge struct {
+	Type   string
+	URI    string `json:"uri"`
+	Token  string
+	Status string
+}
+
+// ChallengeSet encodes a set of challenges, together with permitted combinations.
+type ChallengeSet struct {
+	Challenges   []Challenge
+	Combinations [][]int
+}
+
+// AuthzIdentifier encodes an ID for something to authorize, typically a domain.
+type AuthzIdentifier struct {
+	Type  string `json:"type,omitempty"`
+	Value string `json:"value,omitempty"`
 }
 
 // CertSource creates new CertSource using parameters in config c.
@@ -111,6 +132,57 @@ func Register(client *http.Client, config *Config) error {
 		config.TermsURI = v
 	}
 	return nil
+}
+
+// authorize performs the initial step in an authorization flow.
+// The server will either respond with an error or with a list of challenges
+// which the client will have to choose from and perform, to complete authorization.
+//
+// If client argument is nil, DefaultClient will be used.
+func authorize(client *http.Client, config *Config, domain string) (ChallengeSet, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	nonce, err := fetchNonce(client, config.Endpoint.AuthzURL)
+	if err != nil {
+		return ChallengeSet{}, err
+	}
+
+	// prepare new-authz request
+	req := struct {
+		Resource   string          `json:"resource"`
+		Identifier AuthzIdentifier `json:"identifier"`
+	}{
+		Resource:   "new-authz",
+		Identifier: AuthzIdentifier{Type: "dns", Value: domain},
+	}
+	body, err := jwsEncode(req, config.Key, nonce)
+	if err != nil {
+		return ChallengeSet{}, err
+	}
+
+	// make the new-authz request
+	res, err := client.Post(config.Endpoint.AuthzURL, "application/json", strings.NewReader(body))
+	if err != nil {
+		return ChallengeSet{}, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		return ChallengeSet{}, responseError(res)
+	}
+
+	authzresp := struct {
+		ChallengeSet
+		Status string
+	}{}
+	if err := json.NewDecoder(res.Body).Decode(&authzresp); err != nil {
+		return ChallengeSet{}, fmt.Errorf("Decode: %v", err)
+	}
+
+	if authzresp.Status != "pending" {
+		return ChallengeSet{}, fmt.Errorf("Unexpected status: %s", authzresp.Status)
+	}
+	return authzresp.ChallengeSet, nil
 }
 
 // Discover performs ACME server discovery using provided url and client.
