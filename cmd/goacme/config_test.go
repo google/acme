@@ -17,7 +17,7 @@ import (
 	"reflect"
 	"testing"
 
-	"devrel.googlesource.com/tools/goacme"
+	"github.com/google/goacme"
 )
 
 func TestConfigReadWrite(t *testing.T) {

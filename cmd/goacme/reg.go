@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"os"
 
-	"devrel.googlesource.com/tools/goacme"
+	"github.com/google/goacme"
 )
 
 var (

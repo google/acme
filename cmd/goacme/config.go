@@ -22,7 +22,7 @@ import (
 	"os/user"
 	"path/filepath"
 
-	"devrel.googlesource.com/tools/goacme"
+	"github.com/google/goacme"
 )
 
 const (
