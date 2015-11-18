@@ -13,8 +13,11 @@ package goacme
 
 import (
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
+	"math/big"
 
 	jose "github.com/letsencrypt/go-jose"
 )
@@ -55,4 +58,14 @@ type staticNonceSource string
 
 func (s staticNonceSource) Nonce() (string, error) {
 	return string(s), nil
+}
+
+func jwkThumbprint(key rsa.PublicKey) string {
+	n := key.N
+	e := big.NewInt(int64(key.E))
+	jwk := fmt.Sprintf(`{"e":"%s","kty":"RSA","n":"%s"}`,
+		base64.RawURLEncoding.EncodeToString(e.Bytes()),
+		base64.RawURLEncoding.EncodeToString(n.Bytes()))
+	hash := sha256.Sum256([]byte(jwk))
+	return base64.RawURLEncoding.EncodeToString(hash[:])
 }
