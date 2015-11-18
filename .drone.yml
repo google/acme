@@ -1,4 +1,6 @@
 image: golang
+git:
+  depth: 1
 script:
   - go get ./...
   - go test ./...
