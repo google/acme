@@ -15,7 +15,7 @@ import (
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
-	// TODO: replace this silly library!
+
 	jose "github.com/letsencrypt/go-jose"
 )
 
@@ -43,9 +43,16 @@ func jwsEncode(claims interface{}, key *rsa.PrivateKey, nonce string) (string, e
 	if err != nil {
 		return "", err
 	}
-	sig, err := s.Sign(body, nonce)
+	s.SetNonceSource(staticNonceSource(nonce))
+	sig, err := s.Sign(body)
 	if err != nil {
 		return "", err
 	}
 	return sig.FullSerialize(), nil
+}
+
+type staticNonceSource string
+
+func (s staticNonceSource) Nonce() (string, error) {
+	return string(s), nil
 }
