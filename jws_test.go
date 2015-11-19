@@ -51,6 +51,9 @@ EQeIP6dZtv8IMgtGIb91QX9pXvP0aznzQKwYIA8nZgoENCPfiMTPiEDT9e/0lObO
 -----END RSA PRIVATE KEY----
 `
 
+// This thumbprint is for the testKey defined above.
+const testKeyThumbprint = "6nicxzh6WETQlrvdchkz-U3e3DOQZ4heJKU63rfqMqQ"
+
 var testKey *rsa.PrivateKey
 
 func init() {
