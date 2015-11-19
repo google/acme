@@ -12,60 +12,64 @@
 package goacme
 
 import (
+	"crypto"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"math/big"
-
-	jose "github.com/letsencrypt/go-jose"
 )
 
-type jwsHeader struct {
-	Alg   string `json:"alg"`
-	Typ   string `json:"typ"`
-	JWK   string `json:"jwk"`
-	Nonce string `json:"nonce"`
+// jwsEncodeJSON signs claimset using provided key and a nonce.
+// The result is serialized in JSON format.
+// See https://tools.ietf.org/html/rfc7515#section-7.
+func jwsEncodeJSON(claimset interface{}, key *rsa.PrivateKey, nonce string) ([]byte, error) {
+	jwk := jwkEncode(&key.PublicKey)
+	phead := fmt.Sprintf(`{"alg":"RS256","jwk":%s,"nonce":%q}`, jwk, nonce)
+	phead = base64.RawURLEncoding.EncodeToString([]byte(phead))
+	cs, err := json.Marshal(claimset)
+	if err != nil {
+		return nil, err
+	}
+	payload := base64.RawURLEncoding.EncodeToString(cs)
+	h := sha256.New()
+	h.Write([]byte(phead + "." + payload))
+	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, h.Sum(nil))
+	if err != nil {
+		return nil, err
+	}
+	enc := struct {
+		Protected string `json:"protected"`
+		Payload   string `json:"payload"`
+		Sig       string `json:"signature"`
+	}{
+		Protected: phead,
+		Payload:   payload,
+		Sig:       base64.RawURLEncoding.EncodeToString(sig),
+	}
+	return json.Marshal(&enc)
 }
 
-func (h *jwsHeader) encode() (string, error) {
-	b, err := json.Marshal(h)
-	if err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(b), nil
-}
-
-func jwsEncode(claims interface{}, key *rsa.PrivateKey, nonce string) (string, error) {
-	body, err := json.Marshal(claims)
-	if err != nil {
-		return "", err
-	}
-	s, err := jose.NewSigner(jose.RS256, key)
-	if err != nil {
-		return "", err
-	}
-	s.SetNonceSource(staticNonceSource(nonce))
-	sig, err := s.Sign(body)
-	if err != nil {
-		return "", err
-	}
-	return sig.FullSerialize(), nil
-}
-
-type staticNonceSource string
-
-func (s staticNonceSource) Nonce() (string, error) {
-	return string(s), nil
-}
-
-func jwkThumbprint(key rsa.PublicKey) string {
-	n := key.N
-	e := big.NewInt(int64(key.E))
-	jwk := fmt.Sprintf(`{"e":"%s","kty":"RSA","n":"%s"}`,
+// jwkEncode encodes public part of an RSA key into a JWK.
+// The result is also suitable for creating a JWK thumbprint.
+func jwkEncode(pub *rsa.PublicKey) string {
+	n := pub.N
+	e := big.NewInt(int64(pub.E))
+	// fields order is important
+	// see https://tools.ietf.org/html/rfc7638#section-3.3 for details
+	return fmt.Sprintf(`{"e":"%s","kty":"RSA","n":"%s"}`,
 		base64.RawURLEncoding.EncodeToString(e.Bytes()),
-		base64.RawURLEncoding.EncodeToString(n.Bytes()))
-	hash := sha256.Sum256([]byte(jwk))
-	return base64.RawURLEncoding.EncodeToString(hash[:])
+		base64.RawURLEncoding.EncodeToString(n.Bytes()),
+	)
+}
+
+// jwkThumbprint creates a JWK thumbprint out of pub
+// as specified in https://tools.ietf.org/html/rfc7638.
+func jwkThumbprint(pub *rsa.PublicKey) string {
+	jwk := jwkEncode(pub)
+	h := sha256.New()
+	h.Write([]byte(jwk))
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil))
 }

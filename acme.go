@@ -14,6 +14,7 @@
 package goacme
 
 import (
+	"bytes"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
@@ -104,13 +105,13 @@ func Register(client *http.Client, config *Config) error {
 	if config.TermsURI != "" {
 		reg.Agreement = config.TermsURI
 	}
-	body, err := jwsEncode(reg, config.Key, nonce)
+	body, err := jwsEncodeJSON(reg, config.Key, nonce)
 	if err != nil {
 		return err
 	}
 
 	// make the new-reg request
-	req, err := http.NewRequest("POST", config.Endpoint.RegURL, strings.NewReader(body))
+	req, err := http.NewRequest("POST", config.Endpoint.RegURL, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -156,13 +157,13 @@ func authorize(client *http.Client, config *Config, domain string) (ChallengeSet
 		Resource:   "new-authz",
 		Identifier: AuthzIdentifier{Type: "dns", Value: domain},
 	}
-	body, err := jwsEncode(req, config.Key, nonce)
+	body, err := jwsEncodeJSON(req, config.Key, nonce)
 	if err != nil {
 		return ChallengeSet{}, err
 	}
 
 	// make the new-authz request
-	res, err := client.Post(config.Endpoint.AuthzURL, "application/json", strings.NewReader(body))
+	res, err := client.Post(config.Endpoint.AuthzURL, "application/json", bytes.NewReader(body))
 	if err != nil {
 		return ChallengeSet{}, err
 	}
