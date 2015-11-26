@@ -186,6 +186,58 @@ func authorize(client *http.Client, config *Config, domain string) (ChallengeSet
 	return authzresp.ChallengeSet, nil
 }
 
+// Generates a key authorization string for a given token.
+func keyAuthorization(config *Config, token string) string {
+	return fmt.Sprintf("%s.%s", token, jwkThumbprint(&config.Key.PublicKey))
+}
+
+// acceptChallenge informs the server that the client accepts one of its challenges for validation.
+// The server will then perform the validation asynchronously.
+//
+// If client argument is nil, DefaultClient will be used.
+func acceptChallenge(client *http.Client, config *Config, challenge Challenge) (Challenge, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	nonce, err := fetchNonce(client, challenge.URI)
+	if err != nil {
+		return Challenge{}, err
+	}
+
+	// prepare challenge request
+	req := struct {
+		Resource string `json:"resource"`
+		Type     string `json:"type"`
+		Auth     string `json:"keyAuthorization"`
+	}{
+		Resource: "challenge",
+		Type:     challenge.Type,
+		Auth:     keyAuthorization(config, challenge.Token),
+	}
+	body, err := jwsEncodeJSON(req, config.Key, nonce)
+	if err != nil {
+		return Challenge{}, err
+	}
+	// make the challenge request
+	res, err := client.Post(challenge.URI, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return Challenge{}, err
+	}
+	defer res.Body.Close()
+	// Note: the protocol specifies 200 as the expected response code, but
+	// letsencrypt seems to be returning 202.
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusAccepted {
+		return Challenge{}, responseError(res)
+	}
+
+	chalResp := Challenge{}
+	if err := json.NewDecoder(res.Body).Decode(&chalResp); err != nil {
+		return Challenge{}, fmt.Errorf("Decode: %v", err)
+	}
+
+	return chalResp, nil
+}
+
 // Discover performs ACME server discovery using provided url and client.
 // If client argument is nil, DefaultClient will be used.
 func Discover(client *http.Client, url string) (Endpoint, error) {
