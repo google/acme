@@ -85,6 +85,25 @@ func TestRegister(t *testing.T) {
 		if r.Method != "POST" {
 			t.Errorf("r.Method = %q; want POST", r.Method)
 		}
+
+		var j struct {
+			Resource  string
+			Contact   []string
+			Agreement string
+		}
+		decodeJWSRequest(t, &j, r)
+
+		// Test request
+		if j.Resource != "new-reg" {
+			t.Errorf(`resource = %q; want "new-reg"`, j.Resource)
+		}
+		if len(j.Contact) != 1 || j.Contact[0] != "mailto:admin@example.com" {
+			t.Errorf(`contact = %v; want [mailto:admin@example.com]`, j.Contact)
+		}
+		if j.Agreement != "http://www.example.com" {
+			t.Errorf(`agreement = %q; want "http://www.example.com"`, j.Agreement)
+		}
+
 		w.WriteHeader(http.StatusCreated)
 	}))
 	defer ts.Close()
@@ -94,8 +113,11 @@ func TestRegister(t *testing.T) {
 	}
 	cfg := &Config{
 		Key:      key,
+		Contact:  []string{"mailto:admin@example.com"},
 		Endpoint: Endpoint{RegURL: ts.URL},
+		TermsURI: "http://www.example.com",
 	}
+	// Test response handling
 	if err := Register(nil, cfg); err != nil {
 		t.Fatal(err)
 	}
@@ -110,6 +132,24 @@ func TestAuthorize(t *testing.T) {
 		if r.Method != "POST" {
 			t.Errorf("r.Method = %q; want POST", r.Method)
 		}
+
+		var j struct {
+			Resource   string
+			Identifier AuthzIdentifier
+		}
+		decodeJWSRequest(t, &j, r)
+
+		// Test request
+		if j.Resource != "new-authz" {
+			t.Errorf(`resource = %q; want "new-authz"`, j.Resource)
+		}
+		if j.Identifier.Type != "dns" {
+			t.Errorf(`identifier.type = %q; want "dns"`, j.Identifier.Type)
+		}
+		if j.Identifier.Value != "example.com" {
+			t.Errorf(`identifier.value = %q; want "example.com"`, j.Identifier.Value)
+		}
+
 		w.WriteHeader(http.StatusCreated)
 		fmt.Fprintf(w, `{
 			"identifier": {"type":"dns","value":"example.com"},
@@ -131,14 +171,12 @@ func TestAuthorize(t *testing.T) {
 			"combinations":[[0],[1]]}`)
 	}))
 	defer ts.Close()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		t.Fatal(err)
-	}
 	cfg := &Config{
-		Key:      key,
+		Key:      testKey,
 		Endpoint: Endpoint{AuthzURL: ts.URL},
 	}
+
+	// Test response handling
 	set, err := authorize(nil, cfg, "example.com")
 	if err != nil {
 		t.Fatal(err)
@@ -215,6 +253,8 @@ func TestAcceptChallenge(t *testing.T) {
 		}`, keyAuth)
 	}))
 	defer ts.Close()
+
+	// Test response handling
 	c, err := acceptChallenge(nil, &Config{Key: testKey}, Challenge{
 		URI:   ts.URL,
 		Token: "token1",
