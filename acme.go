@@ -70,6 +70,14 @@ type AuthzIdentifier struct {
 	Value string `json:"value,omitempty"`
 }
 
+// Authorization encodes an authorization response.
+type Authorization struct {
+	Identifier AuthzIdentifier
+	URI        string
+	Status     string
+	ChallengeSet
+}
+
 // CertSource creates new CertSource using parameters in config c.
 func (c *Config) CertSource() CertSource {
 	// not implemented
@@ -140,13 +148,13 @@ func Register(client *http.Client, config *Config) error {
 // which the client will have to choose from and perform, to complete authorization.
 //
 // If client argument is nil, DefaultClient will be used.
-func authorize(client *http.Client, config *Config, domain string) (ChallengeSet, error) {
+func authorize(client *http.Client, config *Config, domain string) (*Authorization, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
 	nonce, err := fetchNonce(client, config.Endpoint.AuthzURL)
 	if err != nil {
-		return ChallengeSet{}, err
+		return nil, err
 	}
 
 	// prepare new-authz request
@@ -159,31 +167,30 @@ func authorize(client *http.Client, config *Config, domain string) (ChallengeSet
 	}
 	body, err := jwsEncodeJSON(req, config.Key, nonce)
 	if err != nil {
-		return ChallengeSet{}, err
+		return nil, err
 	}
 
 	// make the new-authz request
 	res, err := client.Post(config.Endpoint.AuthzURL, "application/json", bytes.NewReader(body))
 	if err != nil {
-		return ChallengeSet{}, err
+		return nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusCreated {
-		return ChallengeSet{}, responseError(res)
+		return nil, responseError(res)
 	}
 
-	authzresp := struct {
-		ChallengeSet
-		Status string
-	}{}
+	authzresp := Authorization{}
 	if err := json.NewDecoder(res.Body).Decode(&authzresp); err != nil {
-		return ChallengeSet{}, fmt.Errorf("Decode: %v", err)
+		return nil, fmt.Errorf("Decode: %v", err)
 	}
+
+	authzresp.URI = res.Header.Get("Location")
 
 	if authzresp.Status != "pending" {
-		return ChallengeSet{}, fmt.Errorf("Unexpected status: %s", authzresp.Status)
+		return nil, fmt.Errorf("Unexpected status: %s", authzresp.Status)
 	}
-	return authzresp.ChallengeSet, nil
+	return &authzresp, nil
 }
 
 // Generates a key authorization string for a given token.
@@ -236,6 +243,30 @@ func acceptChallenge(client *http.Client, config *Config, challenge Challenge) (
 	}
 
 	return chalResp, nil
+}
+
+// pollAuthz checks the current status of an authorization request.
+//
+// If client argument is nil, DefaultClient will be used.
+func pollAuthz(client *http.Client, url string) (*Authorization, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	res, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, responseError(res)
+	}
+
+	var auth Authorization
+	if err := json.NewDecoder(res.Body).Decode(&auth); err != nil {
+		return nil, fmt.Errorf("Decode: %v", err)
+	}
+
+	return &auth, nil
 }
 
 // Discover performs ACME server discovery using provided url and client.
