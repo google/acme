@@ -14,13 +14,17 @@ package goacme
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"testing"
+	"time"
 )
 
 // Decodes a JWS-encoded request and unmarshals the decoded JSON into a provided
@@ -365,6 +369,92 @@ func TestAcceptChallenge(t *testing.T) {
 	}
 	if c.Token != "token1" {
 		t.Errorf("c.Token = %q; want token1", c.Type)
+	}
+}
+
+func TestNewCert(t *testing.T) {
+	notBefore := time.Now()
+	notAfter := notBefore.AddDate(0, 2, 0)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "HEAD" {
+			w.Header().Set("replay-nonce", "test-nonce")
+			return
+		}
+		if r.Method != "POST" {
+			t.Errorf("r.Method = %q; want POST", r.Method)
+		}
+
+		var j struct {
+			Resource  string `json:"resource"`
+			CSR       string `json:"csr"`
+			NotBefore string `json:"notBefore,omitempty"`
+			NotAfter  string `json:"notAfter,omitempty"`
+		}
+		decodeJWSRequest(t, &j, r)
+
+		// Test request
+		if j.Resource != "new-cert" {
+			t.Errorf(`resource = %q; want "new-cert"`, j.Resource)
+		}
+		if j.NotBefore != notBefore.Format(time.RFC3339) {
+			t.Errorf(`notBefore = %q; wanted %q`, j.NotBefore, notBefore.Format(time.RFC3339))
+		}
+		if j.NotAfter != notAfter.Format(time.RFC3339) {
+			t.Errorf(`notAfter = %q; wanted %q`, j.NotAfter, notAfter.Format(time.RFC3339))
+		}
+
+		// Respond to request
+		template := x509.Certificate{
+			SerialNumber: big.NewInt(int64(1)),
+			Subject: pkix.Name{
+				Organization: []string{"goacme"},
+			},
+			NotBefore: notBefore,
+			NotAfter:  notAfter,
+
+			KeyUsage:              x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+			ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+			BasicConstraintsValid: true,
+		}
+
+		sampleCert, err := x509.CreateCertificate(rand.Reader, &template, &template, &testKey.PublicKey, testKey)
+		if err != nil {
+			t.Fatalf("Error creating certificate: %v", err)
+		}
+
+		w.Header().Set("Location", "https://ca.tld/acme/cert/1")
+		w.WriteHeader(http.StatusCreated)
+		w.Write(sampleCert)
+	}))
+	defer ts.Close()
+
+	// Test response handling
+	config := Config{Key: testKey, Endpoint: Endpoint{CertURL: ts.URL}}
+
+	csr := x509.CertificateRequest{
+		Version: 0,
+		Subject: pkix.Name{
+			CommonName:   "example.com",
+			Organization: []string{"goacme"},
+		},
+	}
+
+	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &csr, testKey)
+	if err != nil {
+		t.Fatalf("Error creating certificate request: %v", err)
+	}
+
+	cert, certURL, err := newCert(nil, &config, csrBytes, notBefore, notAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cert == nil {
+		t.Errorf("cert is empty")
+	}
+	if certURL != "https://ca.tld/acme/cert/1" {
+		t.Errorf("certURL = %q; want https://ca.tld/acme/cert/1", certURL)
 	}
 }
 

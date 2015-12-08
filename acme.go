@@ -17,12 +17,14 @@ import (
 	"bytes"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // CertSource can obtain new certificates.
@@ -267,6 +269,74 @@ func pollAuthz(client *http.Client, url string) (*Authorization, error) {
 	}
 
 	return &auth, nil
+}
+
+// newCert requests a new certificate.
+// The certificate may be returned directly in the cert return value, and/or via
+// a long-lived URL in the certURL return value.
+//
+// If client argument is nil, DefaultClient will be used.
+// csr is a DER encoded certificate signing request.
+// notBefore and notAfter are optional
+func newCert(client *http.Client, config *Config, csr []byte, notBefore, notAfter time.Time) (cert *x509.Certificate, certURL string, err error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	nonce, err := fetchNonce(client, config.Endpoint.CertURL)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// prepare certificate request
+	req := struct {
+		Resource  string `json:"resource"`
+		CSR       string `json:"csr"`
+		NotBefore string `json:"notBefore,omitempty"`
+		NotAfter  string `json:"notAfter,omitempty"`
+	}{
+		Resource: "new-cert",
+		CSR:      base64.RawURLEncoding.EncodeToString(csr),
+	}
+
+	if !notBefore.IsZero() {
+		req.NotBefore = notBefore.Format(time.RFC3339)
+	}
+
+	if !notAfter.IsZero() {
+		req.NotAfter = notAfter.Format(time.RFC3339)
+	}
+
+	body, err := jwsEncodeJSON(req, config.Key, nonce)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// make the new-cert request
+	res, err := client.Post(config.Endpoint.CertURL, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return nil, "", err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusCreated {
+		return nil, "", responseError(res)
+	}
+
+	certURL = res.Header.Get("Location")
+	cert = nil
+
+	if res.ContentLength > 0 {
+		certBytes, err := ioutil.ReadAll(res.Body)
+		if err != nil {
+			return nil, "", fmt.Errorf("ReadAll: %v", err)
+		}
+
+		cert, err = x509.ParseCertificate(certBytes)
+		if err != nil {
+			return nil, "", fmt.Errorf("ParseCertificate: %v", err)
+		}
+	}
+
+	return cert, certURL, nil
 }
 
 // Discover performs ACME server discovery using provided url and client.
