@@ -169,7 +169,7 @@ func (c *Client) Register(url string, a *Account) error {
 // GetReg retrieves an existing registration.
 // The url argument is an Account.URI, usually obtained with c.Register.
 func (c *Client) GetReg(url string) (*Account, error) {
-	a := &Account{}
+	a := &Account{URI: url}
 	return a, c.doReg(url, a, "reg")
 }
 
@@ -318,7 +318,9 @@ func (c *Client) doReg(url string, acct *Account, typ string) error {
 	if err := json.NewDecoder(res.Body).Decode(acct); err != nil {
 		return fmt.Errorf("Decode: %v", err)
 	}
-	acct.URI = res.Header.Get("Location")
+	if v := res.Header.Get("Location"); v != "" {
+		acct.URI = v
+	}
 	if v := parseLinkHeader(res.Header, "terms-of-service"); v != "" {
 		acct.CurrentTerms = v
 	}

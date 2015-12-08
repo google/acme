@@ -74,6 +74,7 @@ var (
 	// The order here is the order in which they are printed by 'goacme help'.
 	commands = []*command{
 		cmdReg,
+		cmdWho,
 	}
 
 	exitMu     sync.Mutex // guards exitStatus

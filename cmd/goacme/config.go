@@ -17,10 +17,13 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
+	"text/tabwriter"
 
 	"github.com/google/goacme"
 )
@@ -123,4 +126,22 @@ func writeKey(path string, k *rsa.PrivateKey) error {
 func keyPath(path string) string {
 	ext := filepath.Ext(path)
 	return path[:len(path)-len(ext)] + ".key"
+}
+
+// printAccount outputs account into into w using tabwriter.
+func printAccount(w io.Writer, a *goacme.Account, kp string) {
+	tw := tabwriter.NewWriter(w, 0, 8, 0, '\t', 0)
+	fmt.Fprintln(tw, "URI:\t", a.URI)
+	fmt.Fprintln(tw, "Key:\t", kp)
+	fmt.Fprintln(tw, "Contact:\t", strings.Join(a.Contact, ", "))
+	fmt.Fprintln(tw, "Terms:\t", a.CurrentTerms)
+	agreed := a.AgreedTerms
+	if a.AgreedTerms == "" {
+		agreed = "no"
+	} else if a.AgreedTerms == a.CurrentTerms {
+		agreed = "yes"
+	}
+	fmt.Fprintln(tw, "Accepted:\t", agreed)
+	// TODO: print authorization and certificates
+	tw.Flush()
 }
