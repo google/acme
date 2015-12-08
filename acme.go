@@ -123,7 +123,7 @@ func doReg(client *http.Client, config *Config, url, resource string, update boo
 		return err
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusCreated && res.StatusCode != http.StatusOK {
+	if res.StatusCode < 200 || res.StatusCode > 299 {
 		return responseError(res)
 	}
 
