@@ -41,15 +41,18 @@ type Endpoint struct {
 	RevokeURL string `json:"revoke-cert"`
 }
 
-// Config is the client config. It can be used to perform initial registration
-// and obtain a CertSource.
-// Endpoint, Client and Key must be provided.
-type Config struct {
-	Key      *rsa.PrivateKey
-	Contact  []string
-	Endpoint Endpoint
-	RegURI   string
-	TermsURI string
+type Client struct {
+	http.Client
+	Key *rsa.PrivateKey
+}
+
+type Account struct {
+	Contact        []string
+	AgreedTerms    string `json:"agreement"`
+	CurrentTerms   string
+	URI            string
+	Authorizations string
+	Certificates   string
 }
 
 // Challenge encodes a returned CA challenge.
@@ -87,13 +90,10 @@ func (c *Config) CertSource() CertSource {
 }
 
 // Auxiliary method to send registration requests.
-func doReg(client *http.Client, config *Config, url, resource string, update bool) error {
-	if client == nil {
-		client = http.DefaultClient
-	}
+func doReg(client *Client, url string, account *Account, resource string, update bool) (*Account, error) {
 	nonce, err := fetchNonce(client, url)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// prepare registration request
@@ -105,45 +105,42 @@ func doReg(client *http.Client, config *Config, url, resource string, update boo
 		Resource: resource,
 	}
 	if update {
-		reg.Contact = config.Contact
-		reg.Agreement = config.TermsURI
+		reg.Contact = account.Contact
+		reg.Agreement = account.Agreement
 	}
 	body, err := jwsEncodeJSON(reg, config.Key, nonce)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// make the registration request
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
-	res, err := client.Do(req)
+	res, err := config.Client.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer res.Body.Close()
 	if res.StatusCode < 200 || res.StatusCode > 299 {
-		return responseError(res)
+		return nil, responseError(res)
 	}
 
-	var resp struct {
-		Contact []string `json:"contact"`
+	var acct Account
+	if err := json.NewDecoder(res.Body).Decode(&acct); err != nil {
+		return nil, fmt.Errorf("Decode: %v", err)
 	}
-	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
-		return fmt.Errorf("Decode: %v", err)
+	if v := parseLinkHeader(res.Header, "terms-of-service"); v != "" {
+		acct.CurrentTerms = v
 	}
+	acct.URI = res.Header.Get("Location")
 
-	// update config with the response
-	config.Contact = resp.Contact
-	config.RegURI = res.Header.Get("location")
+	// update config endpoint with the response
 	if v := parseLinkHeader(res.Header, "next"); v != "" {
 		config.Endpoint.AuthzURL = v
 	}
-	if v := parseLinkHeader(res.Header, "terms-of-service"); v != "" {
-		config.TermsURI = v
-	}
-	return nil
+	return &acct, nil
 }
 
 // Register create a new registration by following the "new-reg" flow,
@@ -154,8 +151,8 @@ func doReg(client *http.Client, config *Config, url, resource string, update boo
 // TODO: describe what gets updated.
 //
 // If client argument is nil, DefaultClient will be used.
-func Register(client *http.Client, config *Config) error {
-	return doReg(client, config, config.Endpoint.RegURL, "new-reg", true)
+func Register(client *Client, url string, account *Account) (*Account, error) {
+	return doReg(config, url, account, "new-reg", true)
 }
 
 // GetReg retrieves an existing registration, using the provided config.
@@ -165,8 +162,8 @@ func Register(client *http.Client, config *Config) error {
 // TODO: describe what gets updated.
 //
 // If client argument is nil, DefaultClient will be used.
-func GetReg(client *http.Client, config *Config) error {
-	return doReg(client, config, config.RegURI, "reg", false)
+func GetReg(client *Client, url string, account *Account) (*Account, error) {
+	return doReg(config, url, account, "reg", false)
 }
 
 // UpdateReg retrieves an existing registration, using the provided config.
@@ -176,8 +173,8 @@ func GetReg(client *http.Client, config *Config) error {
 // TODO: describe what gets updated.
 //
 // If client argument is nil, DefaultClient will be used.
-func UpdateReg(client *http.Client, config *Config) error {
-	return doReg(client, config, config.RegURI, "reg", true)
+func UpdateReg(client *Client, url string, account *Account) (*Account, error) {
+	return doReg(config, url, account, "reg", true)
 }
 
 // authorize performs the initial step in an authorization flow.
@@ -185,7 +182,7 @@ func UpdateReg(client *http.Client, config *Config) error {
 // which the client will have to choose from and perform, to complete authorization.
 //
 // If client argument is nil, DefaultClient will be used.
-func authorize(client *http.Client, config *Config, domain string) (*Authorization, error) {
+func authorize(client *Client, domain string) (*Authorization, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -234,7 +231,7 @@ func authorize(client *http.Client, config *Config, domain string) (*Authorizati
 // The server will then perform the validation asynchronously.
 //
 // If client argument is nil, DefaultClient will be used.
-func acceptChallenge(client *http.Client, config *Config, challenge Challenge) (Challenge, error) {
+func acceptChallenge(client *Client, challenge Challenge) (Challenge, error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
@@ -308,7 +305,7 @@ func pollAuthz(client *http.Client, url string) (*Authorization, error) {
 // If client argument is nil, DefaultClient will be used.
 // csr is a DER encoded certificate signing request.
 // notBefore and notAfter are optional
-func newCert(client *http.Client, config *Config, csr []byte, notBefore, notAfter time.Time) (cert *x509.Certificate, certURL string, err error) {
+func newCert(client *Client, csr []byte, notBefore, notAfter time.Time) (cert *x509.Certificate, certURL string, err error) {
 	if client == nil {
 		client = http.DefaultClient
 	}
