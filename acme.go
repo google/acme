@@ -195,11 +195,6 @@ func authorize(client *http.Client, config *Config, domain string) (*Authorizati
 	return &authzresp, nil
 }
 
-// Generates a key authorization string for a given token.
-func keyAuthorization(config *Config, token string) string {
-	return fmt.Sprintf("%s.%s", token, jwkThumbprint(&config.Key.PublicKey))
-}
-
 // acceptChallenge informs the server that the client accepts one of its challenges for validation.
 // The server will then perform the validation asynchronously.
 //
@@ -221,7 +216,7 @@ func acceptChallenge(client *http.Client, config *Config, challenge Challenge) (
 	}{
 		Resource: "challenge",
 		Type:     challenge.Type,
-		Auth:     keyAuthorization(config, challenge.Token),
+		Auth:     keyAuth(&config.Key.PublicKey, challenge.Token),
 	}
 	body, err := jwsEncodeJSON(req, config.Key, nonce)
 	if err != nil {
@@ -387,6 +382,11 @@ func parseLinkHeader(h http.Header, rel string) string {
 		}
 	}
 	return ""
+}
+
+// keyAuth generates a key authorization string for a given token.
+func keyAuth(pub *rsa.PublicKey, token string) string {
+	return fmt.Sprintf("%s.%s", token, jwkThumbprint(pub))
 }
 
 // Error is an ACME error.
