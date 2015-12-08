@@ -75,6 +75,7 @@ var (
 	commands = []*command{
 		cmdReg,
 		cmdWho,
+		cmdUpdate,
 	}
 
 	exitMu     sync.Mutex // guards exitStatus
