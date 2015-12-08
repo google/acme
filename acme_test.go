@@ -104,11 +104,20 @@ func TestRegister(t *testing.T) {
 		if len(j.Contact) != 1 || j.Contact[0] != "mailto:admin@example.com" {
 			t.Errorf(`contact = %v; want [mailto:admin@example.com]`, j.Contact)
 		}
-		if j.Agreement != "http://www.example.com" {
-			t.Errorf(`agreement = %q; want "http://www.example.com"`, j.Agreement)
-		}
 
+		w.Header().Set("Location", "https://ca.tld/acme/reg/1")
+		w.Header().Set("Link", `<https://ca.tld/acme/new-authz>;rel="next"`)
+		w.Header().Add("Link", `<https://ca.tld/acme/recover-reg>;rel="recover"`)
+		w.Header().Add("Link", `<https://ca.tld/acme/terms>;rel="terms-of-service"`)
 		w.WriteHeader(http.StatusCreated)
+		contacts, err := json.Marshal(j.Contact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(w, `{
+			"key":%q,
+			"contact":%s
+		}`, testKeyThumbprint, string(contacts))
 	}))
 	defer ts.Close()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -119,11 +128,138 @@ func TestRegister(t *testing.T) {
 		Key:      key,
 		Contact:  []string{"mailto:admin@example.com"},
 		Endpoint: Endpoint{RegURL: ts.URL},
-		TermsURI: "http://www.example.com",
 	}
 	// Test response handling
 	if err := Register(nil, cfg); err != nil {
 		t.Fatal(err)
+	}
+	// Test config after registration
+	if cfg.Endpoint.AuthzURL != "https://ca.tld/acme/new-authz" {
+		t.Errorf(`Endpoint.AuthzURL = %q; want "https://ca.tld/acme/new-authz"`, cfg.Endpoint.AuthzURL)
+	}
+	if cfg.TermsURI != "https://ca.tld/acme/terms" {
+		t.Errorf(`TermsURI = %q; want "https://ca.tld/acme/terms"`, cfg.TermsURI)
+	}
+}
+
+func TestUpdateReg(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "HEAD" {
+			w.Header().Set("replay-nonce", "test-nonce")
+			return
+		}
+		if r.Method != "POST" {
+			t.Errorf("r.Method = %q; want POST", r.Method)
+		}
+
+		var j struct {
+			Resource  string
+			Contact   []string
+			Agreement string
+		}
+		decodeJWSRequest(t, &j, r)
+
+		// Test request
+		if j.Resource != "reg" {
+			t.Errorf(`resource = %q; want "reg"`, j.Resource)
+		}
+		if len(j.Contact) != 1 || j.Contact[0] != "mailto:admin@example.com" {
+			t.Errorf(`contact = %v; want [mailto:admin@example.com]`, j.Contact)
+		}
+
+		w.Header().Set("Link", `<https://ca.tld/acme/new-authz>;rel="next"`)
+		w.Header().Add("Link", `<https://ca.tld/acme/recover-reg>;rel="recover"`)
+		w.Header().Add("Link", `<https://ca.tld/acme/terms>;rel="terms-of-service"`)
+		w.WriteHeader(http.StatusOK)
+		contacts, err := json.Marshal(j.Contact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(w, `{
+			"key":%q,
+			"contact":%s
+		}`, testKeyThumbprint, string(contacts))
+	}))
+	defer ts.Close()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{
+		Key:     key,
+		Contact: []string{"mailto:admin@example.com"},
+		RegURI:  ts.URL,
+	}
+	// Test response handling
+	if err := UpdateReg(nil, cfg); err != nil {
+		t.Fatal(err)
+	}
+	// Test config after registration
+	if cfg.Endpoint.AuthzURL != "https://ca.tld/acme/new-authz" {
+		t.Errorf(`Endpoint.AuthzURL = %q; want "https://ca.tld/acme/new-authz"`, cfg.Endpoint.AuthzURL)
+	}
+	if cfg.TermsURI != "https://ca.tld/acme/terms" {
+		t.Errorf(`TermsURI = %q; want "https://ca.tld/acme/terms"`, cfg.TermsURI)
+	}
+}
+
+func TestGetReg(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "HEAD" {
+			w.Header().Set("replay-nonce", "test-nonce")
+			return
+		}
+		if r.Method != "POST" {
+			t.Errorf("r.Method = %q; want POST", r.Method)
+		}
+
+		var j struct {
+			Resource  string
+			Contact   []string
+			Agreement string
+		}
+		decodeJWSRequest(t, &j, r)
+
+		// Test request
+		if j.Resource != "reg" {
+			t.Errorf(`resource = %q; want "reg"`, j.Resource)
+		}
+		if len(j.Contact) != 0 {
+			t.Errorf(`contact = %v; want empty`, j.Contact)
+		}
+		if j.Agreement != "" {
+			t.Errorf(`agreement = %q; want ""`, j.Agreement)
+		}
+
+		w.Header().Set("Link", `<https://ca.tld/acme/new-authz>;rel="next"`)
+		w.Header().Add("Link", `<https://ca.tld/acme/recover-reg>;rel="recover"`)
+		w.Header().Add("Link", `<https://ca.tld/acme/terms>;rel="terms-of-service"`)
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, `{
+			"key":%q,
+			"contact": ["mailto:admin@example.com"]
+		}`, testKeyThumbprint)
+	}))
+	defer ts.Close()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := &Config{
+		Key:     key,
+		Contact: []string{"mailto:admin@example.com"},
+		RegURI:  ts.URL,
+	}
+	// Test response handling
+	if err := GetReg(nil, cfg); err != nil {
+		t.Fatal(err)
+	}
+	// Test config after registration
+	if cfg.Endpoint.AuthzURL != "https://ca.tld/acme/new-authz" {
+		t.Errorf(`Endpoint.AuthzURL = %q; want "https://ca.tld/acme/new-authz"`, cfg.Endpoint.AuthzURL)
+	}
+	if cfg.TermsURI != "https://ca.tld/acme/terms" {
+		t.Errorf(`TermsURI = %q; want "https://ca.tld/acme/terms"`, cfg.TermsURI)
 	}
 }
 
