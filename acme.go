@@ -86,33 +86,26 @@ func (c *Config) CertSource() CertSource {
 	return nil
 }
 
-// Register create a new registration by following the "new-reg" flow,
-// using provided config. The config must have non-nil Key field
-// and RegURL endpoint.
-//
-// Config fields will be updated with the server response.
-// TODO: describe what gets updated.
-//
-// If client argument is nil, DefaultClient will be used.
-func Register(client *http.Client, config *Config) error {
+// Auxiliary method to send registration requests.
+func doReg(client *http.Client, config *Config, url, resource string, update bool) error {
 	if client == nil {
 		client = http.DefaultClient
 	}
-	nonce, err := fetchNonce(client, config.Endpoint.RegURL)
+	nonce, err := fetchNonce(client, url)
 	if err != nil {
 		return err
 	}
 
-	// prepare new-reg request
+	// prepare registration request
 	reg := struct {
 		Resource  string   `json:"resource"`
-		Contact   []string `json:"contact"`
+		Contact   []string `json:"contact,omitempty"`
 		Agreement string   `json:"agreement,omitempty"`
 	}{
-		Resource: "new-reg",
-		Contact:  config.Contact,
+		Resource: resource,
 	}
-	if config.TermsURI != "" {
+	if update {
+		reg.Contact = config.Contact
 		reg.Agreement = config.TermsURI
 	}
 	body, err := jwsEncodeJSON(reg, config.Key, nonce)
@@ -120,8 +113,8 @@ func Register(client *http.Client, config *Config) error {
 		return err
 	}
 
-	// make the new-reg request
-	req, err := http.NewRequest("POST", config.Endpoint.RegURL, bytes.NewReader(body))
+	// make the registration request
+	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -130,11 +123,19 @@ func Register(client *http.Client, config *Config) error {
 		return err
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusCreated {
+	if res.StatusCode != http.StatusCreated && res.StatusCode != http.StatusOK {
 		return responseError(res)
 	}
 
+	var resp struct {
+		Contact []string `json:"contact"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
+		return fmt.Errorf("Decode: %v", err)
+	}
+
 	// update config with the response
+	config.Contact = resp.Contact
 	config.RegURI = res.Header.Get("location")
 	if v := parseLinkHeader(res.Header, "next"); v != "" {
 		config.Endpoint.AuthzURL = v
@@ -143,6 +144,40 @@ func Register(client *http.Client, config *Config) error {
 		config.TermsURI = v
 	}
 	return nil
+}
+
+// Register create a new registration by following the "new-reg" flow,
+// using the provided config. The config must have a non-nil Key field
+// and a non-nil Endpoint.RegURL.
+//
+// Config fields will be updated with the server response.
+// TODO: describe what gets updated.
+//
+// If client argument is nil, DefaultClient will be used.
+func Register(client *http.Client, config *Config) error {
+	return doReg(client, config, config.Endpoint.RegURL, "new-reg", true)
+}
+
+// GetReg retrieves an existing registration, using the provided config.
+// The config must have non-nil Key and RegURI fields.
+//
+// Config fields will be updated with the server response.
+// TODO: describe what gets updated.
+//
+// If client argument is nil, DefaultClient will be used.
+func GetReg(client *http.Client, config *Config) error {
+	return doReg(client, config, config.RegURI, "reg", false)
+}
+
+// UpdateReg retrieves an existing registration, using the provided config.
+// The config must have non-nil Key and RegURI fields.
+//
+// Config fields will be updated with the server response.
+// TODO: describe what gets updated.
+//
+// If client argument is nil, DefaultClient will be used.
+func UpdateReg(client *http.Client, config *Config) error {
+	return doReg(client, config, config.RegURI, "reg", true)
 }
 
 // authorize performs the initial step in an authorization flow.
