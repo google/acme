@@ -25,18 +25,17 @@ var (
 		UsageLine: "reg [-c config] [-gen] [-d url] [contact [contact ...]]",
 		Short:     "new account registration",
 		Long: `
-Reg creates a new account at an CA specified in the config file
-or using discovery URL defined with -d argument.
+Reg creates a new account at a CA using the discovery URL
+specified with -d argument.
+
+Upon successful registration, a new config will be written to the file
+specified with -c argument.  Default location for the config file is
+%s.
+
 Contact arguments can be anything: email, phone number, etc.
 
-Default location for the config file is %s.
-A new config will be created if one does not exist.
-
-If -gen flag is not specified, and a config file does not exist, the command
-will exit with an error. Given an existing configuration file, -gen flag
-has no effect.
-
-The -d flag indicates a Directory URL of an ACME CA.
+If -gen flag is not specified, and an account key does not exist, the command
+will exit with an error.
 
 See also: goacme help config.
 		`,
@@ -55,45 +54,26 @@ func init() {
 }
 
 func runReg(args []string) {
-	uc, err := readConfig(*regC)
-	if err != nil && !os.IsNotExist(err) {
-		fatalf("read config: %v", err)
-	}
-	if os.IsNotExist(err) {
-		if !*regGen {
-			fatalf("config file does not exist")
-		}
-		uc = &userConfig{}
-	}
-	// perform discovery if we don't know new-reg URL
-	if uc.Endpoints.RegURL == "" {
-		uc.Endpoints, err = goacme.Discover(nil, *regD)
-		if err != nil {
-			fatalf("discovery: %v", err)
-		}
-	}
-	// at this point we have a config but no key
-	// although it may exist initially even w/o the config
-	if uc.key == nil {
-		uc.key, err = anyKey(keyPath(*regC), *regGen)
-	}
+	key, err := anyKey(keyPath(*regC), *regGen)
 	if err != nil {
 		fatalf("key error: %v", err)
 	}
+	uc := &userConfig{
+		Account: goacme.Account{Contact: args},
+		key:     key,
+	}
 
+	// perform discovery to get the reg url
+	urls, err := goacme.Discover(nil, *regD)
+	if err != nil {
+		fatalf("discovery: %v", err)
+	}
 	// do the registration
-	uc.Contacts = args
-	cfg := fromUserConfig(uc)
-	if err := goacme.Register(nil, cfg); err != nil {
-		fatalf("reg: %v", err)
+	client := goacme.Client{Key: uc.key}
+	if err := client.Register(urls.RegURL, &uc.Account); err != nil {
+		fatalf("%v", err)
 	}
 	// success
-	uc.Reg = cfg.RegURI
-	uc.Endpoints = cfg.Endpoint
-	if cfg.TermsURI != "" {
-		uc.Agreement = cfg.TermsURI
-		uc.Accepted = false
-	}
 	// TODO: ask user for agreement acceptance
 	if err := writeConfig(*regC, uc); err != nil {
 		errorf("write config: %v", err)
