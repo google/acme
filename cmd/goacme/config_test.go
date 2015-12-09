@@ -27,11 +27,15 @@ func TestConfigReadWrite(t *testing.T) {
 	}
 	path := filepath.Join(dir, "cfg-test.json")
 	write := &userConfig{
-		Reg:       "https://example.com/acme/reg/123",
-		Contacts:  []string{"mailto:dude@example.com"},
-		Endpoints: goacme.Endpoint{AuthzURL: "https://authz"},
-		Agreement: "https://agreement",
-		Accepted:  true,
+		Account: goacme.Account{
+			URI:            "https://example.com/acme/reg/123",
+			Contact:        []string{"mailto:dude@example.com"},
+			AgreedTerms:    "http://agreed",
+			CurrentTerms:   "https://terms",
+			Authz:          "https://authz",
+			Authorizations: "https://authorizations",
+			Certificates:   "https://certificates",
+		},
 	}
 	if err := writeConfig(path, write); err != nil {
 		t.Fatal(err)

@@ -35,28 +35,10 @@ const (
 
 // userConfig is configuration for a single ACME CA account.
 type userConfig struct {
-	Reg       string          `json:"registration"`
-	Contacts  []string        `json:"contacts"`
-	Endpoints goacme.Endpoint `json:"endpoints"`
-	Agreement string          `json:"agreement"`
-	Accepted  bool            `json:"accepted"`
+	goacme.Account
+
 	// key is stored separately
 	key *rsa.PrivateKey
-}
-
-// fromUserConfig creates a new goacme.Config using uc.
-// Config.TermsURI is populated only if the agreement has been accepted.
-func fromUserConfig(uc *userConfig) *goacme.Config {
-	cfg := &goacme.Config{
-		Key:      uc.key,
-		Contact:  uc.Contacts,
-		Endpoint: uc.Endpoints,
-		RegURI:   uc.Reg,
-	}
-	if uc.Accepted {
-		cfg.TermsURI = uc.Agreement
-	}
-	return cfg
 }
 
 // configPath returns local file path to a user config.

@@ -13,7 +13,6 @@ package goacme
 
 import (
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/base64"
@@ -81,6 +80,8 @@ func TestDiscover(t *testing.T) {
 }
 
 func TestRegister(t *testing.T) {
+	contacts := []string{"mailto:admin@example.com"}
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "HEAD" {
 			w.Header().Set("replay-nonce", "test-nonce")
@@ -99,10 +100,10 @@ func TestRegister(t *testing.T) {
 
 		// Test request
 		if j.Resource != "new-reg" {
-			t.Errorf(`resource = %q; want "new-reg"`, j.Resource)
+			t.Errorf("j.Resource = %q; want new-reg", j.Resource)
 		}
-		if len(j.Contact) != 1 || j.Contact[0] != "mailto:admin@example.com" {
-			t.Errorf(`contact = %v; want [mailto:admin@example.com]`, j.Contact)
+		if !reflect.DeepEqual(j.Contact, contacts) {
+			t.Errorf("j.Contact = %v; want %v", j.Contact, contacts)
 		}
 
 		w.Header().Set("Location", "https://ca.tld/acme/reg/1")
@@ -110,39 +111,37 @@ func TestRegister(t *testing.T) {
 		w.Header().Add("Link", `<https://ca.tld/acme/recover-reg>;rel="recover"`)
 		w.Header().Add("Link", `<https://ca.tld/acme/terms>;rel="terms-of-service"`)
 		w.WriteHeader(http.StatusCreated)
-		contacts, err := json.Marshal(j.Contact)
-		if err != nil {
-			t.Fatal(err)
-		}
+		b, _ := json.Marshal(contacts)
 		fmt.Fprintf(w, `{
 			"key":%q,
 			"contact":%s
-		}`, testKeyThumbprint, string(contacts))
+		}`, testKeyThumbprint, b)
 	}))
 	defer ts.Close()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
+
+	c := Client{Key: testKey}
+	a := Account{Contact: contacts}
+	if err := c.Register(ts.URL, &a); err != nil {
 		t.Fatal(err)
 	}
-	cfg := &Config{
-		Key:      key,
-		Contact:  []string{"mailto:admin@example.com"},
-		Endpoint: Endpoint{RegURL: ts.URL},
+	if a.URI != "https://ca.tld/acme/reg/1" {
+		t.Errorf("a.URI = %q; want https://ca.tld/acme/reg/1", a.URI)
 	}
-	// Test response handling
-	if err := Register(nil, cfg); err != nil {
-		t.Fatal(err)
+	if a.Authz != "https://ca.tld/acme/new-authz" {
+		t.Errorf("a.Authz = %q; want https://ca.tld/acme/new-authz", a.Authz)
 	}
-	// Test config after registration
-	if cfg.Endpoint.AuthzURL != "https://ca.tld/acme/new-authz" {
-		t.Errorf(`Endpoint.AuthzURL = %q; want "https://ca.tld/acme/new-authz"`, cfg.Endpoint.AuthzURL)
+	if a.CurrentTerms != "https://ca.tld/acme/terms" {
+		t.Errorf("a.CurrentTerms = %q; want https://ca.tld/acme/terms", a.CurrentTerms)
 	}
-	if cfg.TermsURI != "https://ca.tld/acme/terms" {
-		t.Errorf(`TermsURI = %q; want "https://ca.tld/acme/terms"`, cfg.TermsURI)
+	if !reflect.DeepEqual(a.Contact, contacts) {
+		t.Errorf("a.Contact = %v; want %v", a.Contact, contacts)
 	}
 }
 
 func TestUpdateReg(t *testing.T) {
+	const terms = "https://ca.tld/acme/terms"
+	contacts := []string{"mailto:admin@example.com"}
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "HEAD" {
 			w.Header().Set("replay-nonce", "test-nonce")
@@ -161,49 +160,49 @@ func TestUpdateReg(t *testing.T) {
 
 		// Test request
 		if j.Resource != "reg" {
-			t.Errorf(`resource = %q; want "reg"`, j.Resource)
+			t.Errorf("j.Resource = %q; want reg", j.Resource)
 		}
-		if len(j.Contact) != 1 || j.Contact[0] != "mailto:admin@example.com" {
-			t.Errorf(`contact = %v; want [mailto:admin@example.com]`, j.Contact)
+		if j.Agreement != terms {
+			t.Errorf("j.Agreement = %q; want %q", j.Agreement, terms)
+		}
+		if !reflect.DeepEqual(j.Contact, contacts) {
+			t.Errorf("j.Contact = %v; want %v", j.Contact, contacts)
 		}
 
 		w.Header().Set("Link", `<https://ca.tld/acme/new-authz>;rel="next"`)
 		w.Header().Add("Link", `<https://ca.tld/acme/recover-reg>;rel="recover"`)
-		w.Header().Add("Link", `<https://ca.tld/acme/terms>;rel="terms-of-service"`)
+		w.Header().Add("Link", fmt.Sprintf(`<%s>;rel="terms-of-service"`, terms))
 		w.WriteHeader(http.StatusOK)
-		contacts, err := json.Marshal(j.Contact)
-		if err != nil {
-			t.Fatal(err)
-		}
+		b, _ := json.Marshal(contacts)
 		fmt.Fprintf(w, `{
 			"key":%q,
-			"contact":%s
-		}`, testKeyThumbprint, string(contacts))
+			"contact":%s,
+			"agreement":%q
+		}`, testKeyThumbprint, b, terms)
 	}))
 	defer ts.Close()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
+
+	c := Client{Key: testKey}
+	a := Account{Contact: contacts, AgreedTerms: terms}
+	if err := c.UpdateReg(ts.URL, &a); err != nil {
 		t.Fatal(err)
 	}
-	cfg := &Config{
-		Key:     key,
-		Contact: []string{"mailto:admin@example.com"},
-		RegURI:  ts.URL,
+	if a.Authz != "https://ca.tld/acme/new-authz" {
+		t.Errorf("a.Authz = %q; want https://ca.tld/acme/new-authz", a.Authz)
 	}
-	// Test response handling
-	if err := UpdateReg(nil, cfg); err != nil {
-		t.Fatal(err)
+	if a.AgreedTerms != terms {
+		t.Errorf("a.AgreedTerms = %q; want %q", a.AgreedTerms, terms)
 	}
-	// Test config after registration
-	if cfg.Endpoint.AuthzURL != "https://ca.tld/acme/new-authz" {
-		t.Errorf(`Endpoint.AuthzURL = %q; want "https://ca.tld/acme/new-authz"`, cfg.Endpoint.AuthzURL)
-	}
-	if cfg.TermsURI != "https://ca.tld/acme/terms" {
-		t.Errorf(`TermsURI = %q; want "https://ca.tld/acme/terms"`, cfg.TermsURI)
+	if a.CurrentTerms != terms {
+		t.Errorf("a.CurrentTerms = %q; want %q", a.CurrentTerms, terms)
 	}
 }
 
 func TestGetReg(t *testing.T) {
+	const terms = "https://ca.tld/acme/terms"
+	const newTerms = "https://ca.tld/acme/new-terms"
+	contacts := []string{"mailto:admin@example.com"}
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "HEAD" {
 			w.Header().Set("replay-nonce", "test-nonce")
@@ -222,44 +221,41 @@ func TestGetReg(t *testing.T) {
 
 		// Test request
 		if j.Resource != "reg" {
-			t.Errorf(`resource = %q; want "reg"`, j.Resource)
+			t.Errorf("j.Resource = %q; want reg", j.Resource)
 		}
 		if len(j.Contact) != 0 {
-			t.Errorf(`contact = %v; want empty`, j.Contact)
+			t.Errorf("j.Contact = %v", j.Contact)
 		}
 		if j.Agreement != "" {
-			t.Errorf(`agreement = %q; want ""`, j.Agreement)
+			t.Errorf("j.Agreement = %q", j.Agreement)
 		}
 
 		w.Header().Set("Link", `<https://ca.tld/acme/new-authz>;rel="next"`)
 		w.Header().Add("Link", `<https://ca.tld/acme/recover-reg>;rel="recover"`)
-		w.Header().Add("Link", `<https://ca.tld/acme/terms>;rel="terms-of-service"`)
+		w.Header().Add("Link", fmt.Sprintf(`<%s>;rel="terms-of-service"`, newTerms))
 		w.WriteHeader(http.StatusOK)
+		b, _ := json.Marshal(contacts)
 		fmt.Fprintf(w, `{
 			"key":%q,
-			"contact": ["mailto:admin@example.com"]
-		}`, testKeyThumbprint)
+			"contact":%s,
+			"agreement":%q
+		}`, testKeyThumbprint, b, terms)
 	}))
 	defer ts.Close()
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
+
+	c := Client{Key: testKey}
+	a, err := c.GetReg(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &Config{
-		Key:     key,
-		Contact: []string{"mailto:admin@example.com"},
-		RegURI:  ts.URL,
+	if a.Authz != "https://ca.tld/acme/new-authz" {
+		t.Errorf("a.AuthzURL = %q; want https://ca.tld/acme/new-authz", a.Authz)
 	}
-	// Test response handling
-	if err := GetReg(nil, cfg); err != nil {
-		t.Fatal(err)
+	if a.AgreedTerms != terms {
+		t.Errorf("a.AgreedTerms = %q; want %q", a.AgreedTerms, terms)
 	}
-	// Test config after registration
-	if cfg.Endpoint.AuthzURL != "https://ca.tld/acme/new-authz" {
-		t.Errorf(`Endpoint.AuthzURL = %q; want "https://ca.tld/acme/new-authz"`, cfg.Endpoint.AuthzURL)
-	}
-	if cfg.TermsURI != "https://ca.tld/acme/terms" {
-		t.Errorf(`TermsURI = %q; want "https://ca.tld/acme/terms"`, cfg.TermsURI)
+	if a.CurrentTerms != newTerms {
+		t.Errorf("a.CurrentTerms = %q; want %q", a.CurrentTerms, newTerms)
 	}
 }
 
@@ -275,19 +271,19 @@ func TestAuthorize(t *testing.T) {
 
 		var j struct {
 			Resource   string
-			Identifier AuthzIdentifier
+			Identifier AuthzID
 		}
 		decodeJWSRequest(t, &j, r)
 
 		// Test request
 		if j.Resource != "new-authz" {
-			t.Errorf(`resource = %q; want "new-authz"`, j.Resource)
+			t.Errorf("j.Resource = %q; want new-authz", j.Resource)
 		}
 		if j.Identifier.Type != "dns" {
-			t.Errorf(`identifier.type = %q; want "dns"`, j.Identifier.Type)
+			t.Errorf("j.Identifier.Type = %q; want dns", j.Identifier.Type)
 		}
 		if j.Identifier.Value != "example.com" {
-			t.Errorf(`identifier.value = %q; want "example.com"`, j.Identifier.Value)
+			t.Errorf("j.Identifier.Value = %q; want example.com", j.Identifier.Value)
 		}
 
 		w.Header().Set("Location", "https://ca.tld/acme/auth/1")
@@ -312,28 +308,24 @@ func TestAuthorize(t *testing.T) {
 			"combinations":[[0],[1]]}`)
 	}))
 	defer ts.Close()
-	cfg := &Config{
-		Key:      testKey,
-		Endpoint: Endpoint{AuthzURL: ts.URL},
-	}
 
-	// Test response handling
-	auth, err := authorize(nil, cfg, "example.com")
+	cl := Client{Key: testKey}
+	auth, err := cl.Authorize(ts.URL, "example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if auth.URI != "https://ca.tld/acme/auth/1" {
-		t.Errorf(`URI = %q; want "https://ca.tld/acme/auth/1"`, auth.URI)
+		t.Errorf("URI = %q; want https://ca.tld/acme/auth/1", auth.URI)
 	}
 	if auth.Status != "pending" {
-		t.Errorf(`Status = %q; want "pending"`, auth.Status)
+		t.Errorf("Status = %q; want pending", auth.Status)
 	}
 	if auth.Identifier.Type != "dns" {
-		t.Errorf(`Identifier.Type = %q; want "dns"`, auth.Identifier.Type)
+		t.Errorf("Identifier.Type = %q; want dns", auth.Identifier.Type)
 	}
 	if auth.Identifier.Value != "example.com" {
-		t.Errorf(`Identifier.Value = %q; want "example.com"`, auth.Identifier.Value)
+		t.Errorf("Identifier.Value = %q; want example.com", auth.Identifier.Value)
 	}
 
 	set := auth.ChallengeSet
@@ -397,20 +389,20 @@ func TestPollAuthz(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Test response handling
-	auth, err := pollAuthz(nil, ts.URL)
+	cl := Client{Key: testKey}
+	auth, err := cl.GetAuthz(ts.URL)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	if auth.Status != "pending" {
-		t.Errorf(`Status = %q; want "pending"`, auth.Status)
+		t.Errorf("Status = %q; want pending", auth.Status)
 	}
 	if auth.Identifier.Type != "dns" {
-		t.Errorf(`Identifier.Type = %q; want "dns"`, auth.Identifier.Type)
+		t.Errorf("Identifier.Type = %q; want dns", auth.Identifier.Type)
 	}
 	if auth.Identifier.Value != "example.com" {
-		t.Errorf(`Identifier.Value = %q; want "example.com"`, auth.Identifier.Value)
+		t.Errorf("Identifier.Value = %q; want example.com", auth.Identifier.Value)
 	}
 
 	set := auth.ChallengeSet
@@ -487,8 +479,8 @@ func TestAcceptChallenge(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Test response handling
-	c, err := acceptChallenge(nil, &Config{Key: testKey}, Challenge{
+	cl := Client{Key: testKey}
+	c, err := cl.Accept(&Challenge{
 		URI:   ts.URL,
 		Token: "token1",
 		Type:  "http-01",
@@ -565,9 +557,6 @@ func TestNewCert(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	// Test response handling
-	config := Config{Key: testKey, Endpoint: Endpoint{CertURL: ts.URL}}
-
 	csr := x509.CertificateRequest{
 		Version: 0,
 		Subject: pkix.Name{
@@ -575,19 +564,18 @@ func TestNewCert(t *testing.T) {
 			Organization: []string{"goacme"},
 		},
 	}
-
-	csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &csr, testKey)
-	if err != nil {
-		t.Fatalf("Error creating certificate request: %v", err)
-	}
-
-	cert, certURL, err := newCert(nil, &config, csrBytes, notBefore, notAfter)
+	cb, err := x509.CreateCertificateRequest(rand.Reader, &csr, testKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 
+	c := Client{Key: testKey}
+	cert, certURL, err := c.CreateCert(ts.URL, cb, notBefore, notAfter)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if cert == nil {
-		t.Errorf("cert is empty")
+		t.Errorf("cert is nil")
 	}
 	if certURL != "https://ca.tld/acme/cert/1" {
 		t.Errorf("certURL = %q; want https://ca.tld/acme/cert/1", certURL)
