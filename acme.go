@@ -158,7 +158,7 @@ func (c *Client) CreateCert(url string, csr []byte, notBefore, notAfter time.Tim
 }
 
 // Register create a new registration by following the "new-reg" flow.
-// It populates a argument with the response received from the server.
+// It populates the a argument with the response received from the server.
 // Existing field values may be overwritten.
 //
 // The url argument is typically an Endpoint.RegURL.
@@ -174,7 +174,7 @@ func (c *Client) GetReg(url string) (*Account, error) {
 }
 
 // UpdateReg updates existing registration.
-// It populates a argument with the response received from the server.
+// It populates the a argument with the response received from the server.
 // Existing field values may be overwritten.
 //
 // The url argument is an Account.URI, usually obtained with c.Register.
