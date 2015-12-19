@@ -76,6 +76,7 @@ var (
 		cmdReg,
 		cmdWho,
 		cmdUpdate,
+		cmdCert,
 	}
 
 	exitMu     sync.Mutex // guards exitStatus

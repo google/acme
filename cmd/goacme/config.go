@@ -12,6 +12,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
@@ -29,11 +30,13 @@ import (
 )
 
 const (
+	// defaultConfig is the default user config file name.
+	defaultConfig = "account.json"
+	// defaultKey is the default user account private key file.
+	defaultKey = "account.key"
+
 	// rsaPrivateKey is a type of RSA key.
 	rsaPrivateKey = "RSA PRIVATE KEY"
-
-	// defaultConfig is the default user config file name.
-	defaultConfig = "config.json"
 )
 
 // userConfig is configuration for a single ACME CA account.
@@ -44,20 +47,35 @@ type userConfig struct {
 	key *rsa.PrivateKey
 }
 
-// configPath returns local file path to a user config.
-func configPath(name string) string {
+// configDir returns local path to goacme config dir.
+// It is based on user home dir.
+//
+// If, for some reason, current user cannot be obtained,
+// the return value is empty string.
+func configDir() string {
 	u, err := user.Current()
 	if err != nil {
 		return ""
 	}
-	return filepath.Join(u.HomeDir, ".config", "acme", name)
+	return filepath.Join(u.HomeDir, ".config", "acme")
+}
+
+// configFile returns local path of file name using configDir.
+func configFile(name string) string {
+	return filepath.Join(configDir(), name)
+}
+
+// keyPath returns account key tied to the given config file name.
+func keyPath(configName string) string {
+	ext := filepath.Ext(configName)
+	return configName[:len(configName)-len(ext)] + ".key"
 }
 
 // readConfig reads userConfig from path and a private key.
 // It expects to find the key at the same location,
 // by replacing path extention with ".key".
-func readConfig(path string) (*userConfig, error) {
-	b, err := ioutil.ReadFile(path)
+func readConfig(name string) (*userConfig, error) {
+	b, err := ioutil.ReadFile(name)
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +83,7 @@ func readConfig(path string) (*userConfig, error) {
 	if err := json.Unmarshal(b, uc); err != nil {
 		return nil, err
 	}
-	path = keyPath(path)
-	if key, err := readKey(path); err == nil {
+	if key, err := readKey(keyPath(name)); err == nil {
 		uc.key = key
 	}
 	return uc, nil
@@ -121,11 +138,22 @@ func writeKey(path string, k *rsa.PrivateKey) error {
 	return f.Close()
 }
 
-// keyPath returns file path to a private key, matching user config file
-// specified by path argument.
-func keyPath(path string) string {
-	ext := filepath.Ext(path)
-	return path[:len(path)-len(ext)] + ".key"
+// anyKey reads the key from file or generates a new one if gen == true.
+// It returns an error if filename exists but cannot be read.
+// A newly generated key is also stored to filename.
+func anyKey(filename string, gen bool) (*rsa.PrivateKey, error) {
+	k, err := readKey(filename)
+	if err == nil {
+		return k, nil
+	}
+	if !os.IsNotExist(err) || !gen {
+		return nil, err
+	}
+	k, err = rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, err
+	}
+	return k, writeKey(filename, k)
 }
 
 // printAccount outputs account into into w using tabwriter.

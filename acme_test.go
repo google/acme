@@ -503,6 +503,7 @@ func TestAcceptChallenge(t *testing.T) {
 func TestNewCert(t *testing.T) {
 	notBefore := time.Now()
 	notAfter := notBefore.AddDate(0, 2, 0)
+	timeNow = func() time.Time { return notBefore }
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == "HEAD" {
@@ -564,13 +565,13 @@ func TestNewCert(t *testing.T) {
 			Organization: []string{"goacme"},
 		},
 	}
-	cb, err := x509.CreateCertificateRequest(rand.Reader, &csr, testKey)
+	csrb, err := x509.CreateCertificateRequest(rand.Reader, &csr, testKey)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	c := Client{Key: testKey}
-	cert, certURL, err := c.CreateCert(ts.URL, cb, notBefore, notAfter)
+	cert, certURL, err := c.CreateCert(ts.URL, csrb, notAfter.Sub(notBefore), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,7 +616,7 @@ func TestFetchNonce(t *testing.T) {
 	}
 }
 
-func TestParseLinkHeader(t *testing.T) {
+func TestLinkHeader(t *testing.T) {
 	h := http.Header{"Link": {
 		`<https://example.com/acme/new-authz>;rel="next"`,
 		`<https://example.com/acme/recover-reg>; rel=recover`,
@@ -628,7 +629,7 @@ func TestParseLinkHeader(t *testing.T) {
 		{"empty", ""},
 	}
 	for i, test := range tests {
-		if v := parseLinkHeader(h, test.in); v != test.out {
+		if v := linkHeader(h, test.in); v != test.out {
 			t.Errorf("%d: parseLinkHeader(%q): %q; want %q", i, test.in, v, test.out)
 		}
 	}

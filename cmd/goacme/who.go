@@ -37,7 +37,7 @@ Default location for the config file is
 )
 
 func init() {
-	p := configPath(defaultConfig)
+	p := configFile(defaultConfig)
 	whoC = cmdWho.flag.String("c", p, "")
 	cmdWho.Long = fmt.Sprintf(cmdWho.Long, p)
 	cmdWho.run = runWhoami

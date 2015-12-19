@@ -23,9 +23,23 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// ACME server response statuses
+const (
+	StatusUnknown    = "unknown"
+	StatusPending    = "pending"
+	StatusProcessing = "processing"
+	StatusValid      = "valid"
+	StatusInvalid    = "invalid"
+	StatusRevoked    = "revoked"
+)
+
+// timeNow is useful for testing for fixed current time.
+var timeNow = time.Now
 
 // CertSource can obtain new certificates.
 type CertSource interface {
@@ -111,12 +125,12 @@ func (c *Client) CertSource() CertSource {
 
 // CreateCert requests a new certificate.
 // It always returns a non-empty long-lived certURL.
-// The cert, however, may be nil even if no error occurred.
+// The cert der bytes, however, may be nil even if no error occurred.
+// The returned value will also contain CA (the issuer) certificate if bundle is true.
 //
 // url is typically an Endpoint.CertURL.
 // csr is a DER encoded certificate signing request.
-// notBefore and notAfter are optional.
-func (c *Client) CreateCert(url string, csr []byte, notBefore, notAfter time.Time) (cert *x509.Certificate, certURL string, err error) {
+func (c *Client) CreateCert(url string, csr []byte, exp time.Duration, bundle bool) (der [][]byte, certURL string, err error) {
 	req := struct {
 		Resource  string `json:"resource"`
 		CSR       string `json:"csr"`
@@ -126,12 +140,10 @@ func (c *Client) CreateCert(url string, csr []byte, notBefore, notAfter time.Tim
 		Resource: "new-cert",
 		CSR:      base64.RawURLEncoding.EncodeToString(csr),
 	}
-	if !notBefore.IsZero() {
-		req.NotBefore = notBefore.Format(time.RFC3339)
-	}
-
-	if !notAfter.IsZero() {
-		req.NotAfter = notAfter.Format(time.RFC3339)
+	now := timeNow()
+	req.NotBefore = now.Format(time.RFC3339)
+	if exp > 0 {
+		req.NotAfter = now.Add(exp).Format(time.RFC3339)
 	}
 
 	res, err := c.PostJWS(url, req)
@@ -143,18 +155,14 @@ func (c *Client) CreateCert(url string, csr []byte, notBefore, notAfter time.Tim
 		return nil, "", responseError(res)
 	}
 
-	cert = nil
-	if res.ContentLength > 0 {
-		b, err := ioutil.ReadAll(res.Body)
-		if err != nil {
-			return nil, "", fmt.Errorf("ReadAll: %v", err)
-		}
-		cert, err = x509.ParseCertificate(b)
-		if err != nil {
-			return nil, "", fmt.Errorf("ParseCertificate: %v", err)
-		}
+	curl := res.Header.Get("location") // cert permanent URL
+	if res.ContentLength == 0 {
+		// no cert in the body
+		return nil, curl, nil
 	}
-	return cert, res.Header.Get("Location"), nil
+	// slurp issued cert and ca, if requested
+	cert, err := responseCert(&c.Client, res, bundle)
+	return cert, curl, err
 }
 
 // Register create a new registration by following the "new-reg" flow.
@@ -284,6 +292,19 @@ func (c *Client) PostJWS(url string, body interface{}) (*http.Response, error) {
 	return c.Do(req)
 }
 
+// HTTP01Handler creates a new handler which responds to a http-01 challenge.
+// The token argument is usually a Challenge.Token value.
+func (c *Client) HTTP01Handler(token string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, token) {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Header().Set("content-type", "text/plain")
+		w.Write([]byte(keyAuth(&c.Key.PublicKey, token)))
+	})
+}
+
 // doReg sends all types of registration requests.
 // The type of request is identified by typ argument, which is a "resource"
 // in the ACME spec terms.
@@ -321,10 +342,10 @@ func (c *Client) doReg(url string, acct *Account, typ string) error {
 	if v := res.Header.Get("Location"); v != "" {
 		acct.URI = v
 	}
-	if v := parseLinkHeader(res.Header, "terms-of-service"); v != "" {
+	if v := linkHeader(res.Header, "terms-of-service"); v != "" {
 		acct.CurrentTerms = v
 	}
-	if v := parseLinkHeader(res.Header, "next"); v != "" {
+	if v := linkHeader(res.Header, "next"); v != "" {
 		acct.Authz = v
 	}
 	return nil
@@ -351,6 +372,53 @@ func Discover(client *http.Client, url string) (Endpoint, error) {
 	return ep, nil
 }
 
+// FetchCert retrieves already issued certificate from the given url, in DER format.
+// The returned value will also contain CA (the issuer) certificate if bundle == true.
+//
+// When the request succeeds but certificate is unavailable at the time,
+// the function returns nil and error will be of RetryError type.
+//
+// DefaultClient is used if client argument is nil.
+func FetchCert(client *http.Client, url string, bundle bool) ([][]byte, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	res, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode > 299 {
+		return nil, responseError(res)
+	}
+	if res.StatusCode == http.StatusAccepted {
+		d := retryAfter(res.Header.Get("retry-after"))
+		return nil, RetryError(d)
+	}
+	return responseCert(client, res, bundle)
+}
+
+func responseCert(client *http.Client, res *http.Response, bundle bool) ([][]byte, error) {
+	b, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		return nil, fmt.Errorf("ReadAll: %v", err)
+	}
+	cert := [][]byte{b}
+	if !bundle {
+		return cert, nil
+	}
+	// append ca cert
+	up := linkHeader(res.Header, "up")
+	if up == "" {
+		return nil, errors.New("rel=up link not found")
+	}
+	b, err = slurp(client, up)
+	if err != nil {
+		return nil, err
+	}
+	return append(cert, b), nil
+}
+
 func fetchNonce(client *http.Client, url string) (string, error) {
 	resp, err := client.Head(url)
 	if err != nil {
@@ -364,7 +432,19 @@ func fetchNonce(client *http.Client, url string) (string, error) {
 	return enc, nil
 }
 
-func parseLinkHeader(h http.Header, rel string) string {
+func slurp(client *http.Client, url string) ([]byte, error) {
+	res, err := client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, responseError(res)
+	}
+	return ioutil.ReadAll(res.Body)
+}
+
+func linkHeader(h http.Header, rel string) string {
 	for _, v := range h["Link"] {
 		parts := strings.Split(v, ";")
 		for _, p := range parts {
@@ -378,6 +458,18 @@ func parseLinkHeader(h http.Header, rel string) string {
 		}
 	}
 	return ""
+}
+
+func retryAfter(v string) time.Duration {
+	i, err := strconv.Atoi(v)
+	if err == nil {
+		return time.Duration(i) * time.Second
+	}
+	t, err := http.ParseTime(v)
+	if err != nil {
+		return 3 * time.Second
+	}
+	return t.Sub(timeNow())
 }
 
 // keyAuth generates a key authorization string for a given token.
@@ -410,4 +502,12 @@ func responseError(resp *http.Response) error {
 		e.Detail = resp.Status
 	}
 	return e
+}
+
+// RetryError is a "temporary" error indicating that the request
+// can be retried after the specified duration.
+type RetryError time.Duration
+
+func (re RetryError) Error() string {
+	return fmt.Sprintf("retry after %s", re)
 }

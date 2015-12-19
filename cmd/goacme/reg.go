@@ -12,10 +12,7 @@
 package main
 
 import (
-	"crypto/rand"
-	"crypto/rsa"
 	"fmt"
-	"os"
 
 	"github.com/google/goacme"
 )
@@ -47,7 +44,7 @@ See also: goacme help config.
 )
 
 func init() {
-	p := configPath(defaultConfig)
+	p := configFile(defaultConfig)
 	regC = cmdReg.flag.String("c", p, "")
 	cmdReg.Long = fmt.Sprintf(cmdReg.Long, p)
 	cmdReg.run = runReg
@@ -56,7 +53,7 @@ func init() {
 func runReg(args []string) {
 	key, err := anyKey(keyPath(*regC), *regGen)
 	if err != nil {
-		fatalf("key error: %v", err)
+		fatalf("account key: %v", err)
 	}
 	uc := &userConfig{
 		Account: goacme.Account{Contact: args},
@@ -78,20 +75,4 @@ func runReg(args []string) {
 	if err := writeConfig(*regC, uc); err != nil {
 		errorf("write config: %v", err)
 	}
-	if err := writeKey(keyPath(*regC), uc.key); err != nil {
-		errorf("write key: %v", err)
-	}
-}
-
-// anyKey reads the key from file or generates a new one if gen == true.
-// It returns an error if keyPath exists but cannot be read.
-func anyKey(file string, gen bool) (*rsa.PrivateKey, error) {
-	k, err := readKey(file)
-	if err == nil {
-		return k, nil
-	}
-	if !os.IsNotExist(err) || !gen {
-		return nil, err
-	}
-	return rsa.GenerateKey(rand.Reader, 2048)
 }

@@ -36,7 +36,7 @@ Default location for the config file is
 )
 
 func init() {
-	p := configPath(defaultConfig)
+	p := configFile(defaultConfig)
 	updateC = cmdUpdate.flag.String("c", p, "")
 	cmdUpdate.Long = fmt.Sprintf(cmdUpdate.Long, p)
 	cmdUpdate.run = runUpdate
