@@ -12,18 +12,97 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"strings"
 	"sync"
-	"text/template"
-	"unicode"
-	"unicode/utf8"
 )
+
+// defaultDisco is the default CA directory endpoint.
+const defaultDisco = "letsencrypt"
+
+var (
+	// discoAliases defines known ACME CAs.
+	discoAliases = map[string]string{
+		"letsencrypt":         "https://acme-v01.api.letsencrypt.org/directory",
+		"letsencrypt-staging": "https://acme-staging.api.letsencrypt.org/directory",
+	}
+
+	// commands lists all available commands and help topics.
+	// The order here is the order in which they are printed by 'goacme help'.
+	commands = []*command{
+		cmdReg,
+		cmdWho,
+		cmdUpdate,
+		cmdCert,
+		// help commands, non-executable
+		helpAccount,
+		helpDisco,
+	}
+
+	exitMu     sync.Mutex // guards exitStatus
+	exitStatus = 0
+)
+
+var logf = log.Printf
+
+func errorf(format string, args ...interface{}) {
+	logf(format, args...)
+	setExitStatus(1)
+}
+
+func fatalf(format string, args ...interface{}) {
+	errorf(format, args...)
+	exit()
+}
+
+func setExitStatus(n int) {
+	exitMu.Lock()
+	if exitStatus < n {
+		exitStatus = n
+	}
+	exitMu.Unlock()
+}
+
+func exit() {
+	os.Exit(exitStatus)
+}
+
+func main() {
+	flag.Usage = usage
+	flag.Parse() // catch -h argument
+	log.SetFlags(0)
+
+	args := flag.Args()
+	if len(args) < 1 {
+		usage()
+	}
+	if args[0] == "help" {
+		help(args[1:])
+		return
+	}
+
+	for _, cmd := range commands {
+		if cmd.Name() == args[0] && cmd.Runnable() {
+			addFlags(&cmd.flag)
+			cmd.flag.Usage = func() { cmd.Usage() }
+			cmd.flag.Parse(args[1:])
+			cmd.run(cmd.flag.Args())
+			exit()
+			return
+		}
+	}
+
+	fatalf("Unknown subcommand %q.\nRun 'goacme help' for usage.\n", args[0])
+}
+
+// addFlags adds flags common to all goacmd subcommands.
+// Common flag var names are of flagXxx form.
+func addFlags(f *flag.FlagSet) {
+	f.StringVar(&configDir, "c", configDir, "")
+}
 
 // A command is an implementation of a goacme command
 // like goacme reg or goacme whoami.
@@ -42,7 +121,9 @@ type command struct {
 	// Short is the short description shown in the 'goacme help' output.
 	Short string
 
-	// Long is the long message shown in the 'goacme help <command>' output.
+	// Long is the detailed command description template shown in
+	// 'goacme help <command>' output.
+	// The template context is longTemplateData.
 	Long string
 }
 
@@ -56,7 +137,8 @@ func (c *command) Name() string {
 	return name
 }
 
-// Usage reports command's usage, including long description.
+// Usage reports command's usage to stderr, including long description,
+// and exits with code 2.
 func (c *command) Usage() {
 	fmt.Fprintf(os.Stderr, "usage: %s\n\n", c.UsageLine)
 	fmt.Fprintf(os.Stderr, "%s\n", strings.TrimSpace(c.Long))
@@ -69,168 +151,17 @@ func (c *command) Runnable() bool {
 	return c.run != nil
 }
 
-var (
-	// commands lists all available commands and help topics.
-	// The order here is the order in which they are printed by 'goacme help'.
-	commands = []*command{
-		cmdReg,
-		cmdWho,
-		cmdUpdate,
-		cmdCert,
-	}
+// discoAlias is a flag which can resolve discoAliases.
+type discoAlias string
 
-	exitMu     sync.Mutex // guards exitStatus
-	exitStatus = 0
-)
-
-func setExitStatus(n int) {
-	exitMu.Lock()
-	if exitStatus < n {
-		exitStatus = n
-	}
-	exitMu.Unlock()
+func (df *discoAlias) String() string {
+	return string(*df)
 }
 
-func exit() {
-	os.Exit(exitStatus)
-}
-
-var logf = log.Printf
-
-func errorf(format string, args ...interface{}) {
-	logf(format, args...)
-	setExitStatus(1)
-}
-
-func fatalf(format string, args ...interface{}) {
-	errorf(format, args...)
-	exit()
-}
-
-func main() {
-	flag.Usage = usage
-	flag.Parse()
-	log.SetFlags(0)
-
-	args := flag.Args()
-	if len(args) < 1 {
-		usage()
+func (df *discoAlias) Set(v string) error {
+	if a, ok := discoAliases[v]; ok {
+		v = a
 	}
-
-	if args[0] == "help" {
-		help(args[1:])
-		return
-	}
-
-	for _, cmd := range commands {
-		if cmd.Name() == args[0] && cmd.Runnable() {
-			cmd.flag.Usage = func() { cmd.Usage() }
-			cmd.flag.Parse(args[1:])
-			cmd.run(cmd.flag.Args())
-			exit()
-			return
-		}
-	}
-
-	fmt.Fprintf(os.Stderr, "Unknown subcommand %q.\nRun 'goacme help' for usage.\n", args[0])
-	os.Exit(2)
+	*df = discoAlias(v)
+	return nil
 }
-
-func usage() {
-	printUsage(os.Stderr)
-	os.Exit(2)
-}
-
-func printUsage(w io.Writer) {
-	bw := bufio.NewWriter(w)
-	tmpl(bw, usageTemplate, commands)
-	bw.Flush()
-}
-
-func help(args []string) {
-	if len(args) == 0 {
-		printUsage(os.Stdout)
-		return
-	}
-	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "usage: goacme help command\n\nToo many arguments given.\n")
-		os.Exit(2)
-	}
-
-	arg := args[0]
-	for _, cmd := range commands {
-		if cmd.Name() == arg {
-			tmpl(os.Stdout, helpTemplate, cmd)
-			return
-		}
-	}
-
-	fmt.Fprintf(os.Stderr, "Unknown help topic %q. Run 'goacme help'.\n", arg)
-	os.Exit(2)
-}
-
-// tmpl executes the given template text on data, writing the result to w.
-func tmpl(w io.Writer, text string, data interface{}) {
-	t := template.New("top")
-	t.Funcs(template.FuncMap{"trim": strings.TrimSpace, "capitalize": capitalize})
-	template.Must(t.Parse(text))
-	ew := &errWriter{w: w}
-	err := t.Execute(ew, data)
-	if ew.err != nil {
-		// I/O error writing; ignore write on closed pipe
-		if strings.Contains(ew.err.Error(), "pipe") {
-			os.Exit(1)
-		}
-		fatalf("writing output: %v", ew.err)
-	}
-	if err != nil {
-		panic(err)
-	}
-}
-
-// An errWriter wraps a writer, recording whether a write error occurred.
-type errWriter struct {
-	w   io.Writer
-	err error
-}
-
-func (w *errWriter) Write(b []byte) (int, error) {
-	n, err := w.w.Write(b)
-	if err != nil {
-		w.err = err
-	}
-	return n, err
-}
-
-func capitalize(s string) string {
-	if s == "" {
-		return s
-	}
-	r, n := utf8.DecodeRuneInString(s)
-	return string(unicode.ToTitle(r)) + s[n:]
-}
-
-var usageTemplate = `goacme is a client tool for managing certificates
-with ACME-compliant servers.
-
-Usage:
-	goacme command [arguments]
-
-The commands are:
-{{range .}}{{if .Runnable}}
-	{{.Name | printf "%-11s"}} {{.Short}}{{end}}{{end}}
-
-Use "goacme help [command]" for more information about a command.
-
-Additional help topics:
-{{range .}}{{if not .Runnable}}
-	{{.Name | printf "%-11s"}} {{.Short}}{{end}}{{end}}
-
-Use "goacme help [topic]" for more information about that topic.
-
-`
-
-var helpTemplate = `{{if .Runnable}}usage: goacme {{.UsageLine}}
-
-{{end}}{{.Long | trim}}
-`

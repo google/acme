@@ -13,7 +13,6 @@ package main
 
 import (
 	"io/ioutil"
-	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -25,7 +24,7 @@ func TestConfigReadWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := filepath.Join(dir, "cfg-test.json")
+	configDir = dir
 	write := &userConfig{
 		Account: goacme.Account{
 			URI:            "https://example.com/acme/reg/123",
@@ -37,10 +36,10 @@ func TestConfigReadWrite(t *testing.T) {
 			Certificates:   "https://certificates",
 		},
 	}
-	if err := writeConfig(path, write); err != nil {
+	if err := writeConfig(write); err != nil {
 		t.Fatal(err)
 	}
-	read, err := readConfig(path)
+	read, err := readConfig()
 	if err != nil {
 		t.Fatal(err)
 	}

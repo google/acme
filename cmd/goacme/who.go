@@ -12,14 +12,15 @@
 package main
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/google/goacme"
 )
 
 var (
 	cmdWho = &command{
+		run:       runWhoami,
 		UsageLine: "whoami [-c config]",
 		Short:     "display info about the key holder",
 		Long: `
@@ -28,23 +29,13 @@ found in the config file and displays the formatted results.
 
 It is a simple way to verify the validity of an account key.
 
-Default location for the config file is
-%s.
+Default location of the config dir is {{.ConfigDir}}.
 		`,
 	}
-
-	whoC *string // -c flag defined in init()
 )
 
-func init() {
-	p := configFile(defaultConfig)
-	whoC = cmdWho.flag.String("c", p, "")
-	cmdWho.Long = fmt.Sprintf(cmdWho.Long, p)
-	cmdWho.run = runWhoami
-}
-
 func runWhoami([]string) {
-	uc, err := readConfig(*whoC)
+	uc, err := readConfig()
 	if err != nil {
 		fatalf("read config: %v", err)
 	}
@@ -57,5 +48,5 @@ func runWhoami([]string) {
 	if err != nil {
 		fatalf(err.Error())
 	}
-	printAccount(os.Stdout, a, keyPath(*whoC))
+	printAccount(os.Stdout, a, filepath.Join(configDir, accountKey))
 }

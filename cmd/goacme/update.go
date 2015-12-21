@@ -12,38 +12,38 @@
 package main
 
 import (
-	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/google/goacme"
 )
 
 var (
 	cmdUpdate = &command{
+		run:       runUpdate,
 		UsageLine: "update [-c config] [-accept] [contact [contact ...]]",
 		Short:     "update account data",
 		Long: `
 Update modifies account contact info and accepts the current CA
 service agreement which can be seen using whoami command.
 
-Default location for the config file is
-%s.
+Use -accept argument to indicate that the account holder agrees with
+the proposed CA's Terms and Conditions (the agreement).
+
+Default location of the config dir is
+{{.ConfigDir}}.
 		`,
 	}
 
-	updateC      *string // -c flag defined in init()
-	updateAccept = cmdUpdate.flag.Bool("accept", false, "")
+	updateAccept bool
 )
 
 func init() {
-	p := configFile(defaultConfig)
-	updateC = cmdUpdate.flag.String("c", p, "")
-	cmdUpdate.Long = fmt.Sprintf(cmdUpdate.Long, p)
-	cmdUpdate.run = runUpdate
+	cmdUpdate.flag.BoolVar(&updateAccept, "accept", updateAccept, "")
 }
 
 func runUpdate(args []string) {
-	uc, err := readConfig(*updateC)
+	uc, err := readConfig()
 	if err != nil {
 		fatalf("read config: %v", err)
 	}
@@ -52,7 +52,7 @@ func runUpdate(args []string) {
 	}
 
 	client := goacme.Client{Key: uc.key}
-	if *updateAccept {
+	if updateAccept {
 		a, err := client.GetReg(uc.URI)
 		if err != nil {
 			fatalf(err.Error())
@@ -67,8 +67,8 @@ func runUpdate(args []string) {
 	if err := client.UpdateReg(uc.URI, &uc.Account); err != nil {
 		fatalf(err.Error())
 	}
-	if err := writeConfig(*updateC, uc); err != nil {
+	if err := writeConfig(uc); err != nil {
 		fatalf("write config: %v", err)
 	}
-	printAccount(os.Stdout, &uc.Account, keyPath(*updateC))
+	printAccount(os.Stdout, &uc.Account, filepath.Join(configDir, accountKey))
 }

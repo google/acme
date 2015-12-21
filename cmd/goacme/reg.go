@@ -12,46 +12,46 @@
 package main
 
 import (
-	"fmt"
+	"path/filepath"
 
 	"github.com/google/goacme"
 )
 
 var (
 	cmdReg = &command{
+		run:       runReg,
 		UsageLine: "reg [-c config] [-gen] [-d url] [contact [contact ...]]",
 		Short:     "new account registration",
 		Long: `
 Reg creates a new account at a CA using the discovery URL
-specified with -d argument.
+specified with -d argument. The default value is {{.DefaultDisco}}.
+For more information about the discovery run goacme help disco.
 
-Upon successful registration, a new config will be written to the file
-specified with -c argument.  Default location for the config file is
-%s.
+Upon successful registration, a new config will be written to {{.AccountFile}}
+in the directory specified with -c argument. Default location of the config dir
+is {{.ConfigDir}}.
+If the config dir does not exist, it will be created.
 
 Contact arguments can be anything: email, phone number, etc.
 
 If -gen flag is not specified, and an account key does not exist, the command
 will exit with an error.
 
-See also: goacme help config.
+See also: goacme help account.
 		`,
 	}
 
-	regC   *string // -c flag defined in init()
-	regD   = cmdReg.flag.String("d", "https://acme-staging.api.letsencrypt.org/directory", "")
-	regGen = cmdReg.flag.Bool("gen", false, "")
+	regDisco discoAlias = defaultDisco
+	regGen   bool
 )
 
 func init() {
-	p := configFile(defaultConfig)
-	regC = cmdReg.flag.String("c", p, "")
-	cmdReg.Long = fmt.Sprintf(cmdReg.Long, p)
-	cmdReg.run = runReg
+	cmdReg.flag.Var(&regDisco, "d", "")
+	cmdReg.flag.BoolVar(&regGen, "gen", regGen, "")
 }
 
 func runReg(args []string) {
-	key, err := anyKey(keyPath(*regC), *regGen)
+	key, err := anyKey(filepath.Join(configDir, accountKey), regGen)
 	if err != nil {
 		fatalf("account key: %v", err)
 	}
@@ -61,7 +61,7 @@ func runReg(args []string) {
 	}
 
 	// perform discovery to get the reg url
-	urls, err := goacme.Discover(nil, *regD)
+	urls, err := goacme.Discover(nil, string(regDisco))
 	if err != nil {
 		fatalf("discovery: %v", err)
 	}
@@ -72,7 +72,7 @@ func runReg(args []string) {
 	}
 	// success
 	// TODO: ask user for agreement acceptance
-	if err := writeConfig(*regC, uc); err != nil {
+	if err := writeConfig(uc); err != nil {
 		errorf("write config: %v", err)
 	}
 }

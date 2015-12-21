@@ -30,52 +30,43 @@ import (
 )
 
 const (
-	// defaultConfig is the default user config file name.
-	defaultConfig = "account.json"
-	// defaultKey is the default user account private key file.
-	defaultKey = "account.key"
+	// accountFile is the default user config file name.
+	accountFile = "account.json"
+	// accountKey is the default user account private key file.
+	accountKey = "account.key"
 
 	// rsaPrivateKey is a type of RSA key.
 	rsaPrivateKey = "RSA PRIVATE KEY"
 )
 
+// configDir is goacme configuration dir.
+// It may be empty string.
+//
+// The value is initialized at startup and is also allowed to be modified
+// using -c flag, common to all subcommands.
+var configDir string
+
+func init() {
+	if u, err := user.Current(); err == nil {
+		configDir = filepath.Join(u.HomeDir, ".config", "acme")
+	}
+}
+
 // userConfig is configuration for a single ACME CA account.
 type userConfig struct {
 	goacme.Account
+	CA string `json:"ca"` // CA discovery URL
 
 	// key is stored separately
 	key *rsa.PrivateKey
 }
 
-// configDir returns local path to goacme config dir.
-// It is based on user home dir.
-//
-// If, for some reason, current user cannot be obtained,
-// the return value is empty string.
-func configDir() string {
-	u, err := user.Current()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(u.HomeDir, ".config", "acme")
-}
-
-// configFile returns local path of file name using configDir.
-func configFile(name string) string {
-	return filepath.Join(configDir(), name)
-}
-
-// keyPath returns account key tied to the given config file name.
-func keyPath(configName string) string {
-	ext := filepath.Ext(configName)
-	return configName[:len(configName)-len(ext)] + ".key"
-}
-
 // readConfig reads userConfig from path and a private key.
 // It expects to find the key at the same location,
 // by replacing path extention with ".key".
-func readConfig(name string) (*userConfig, error) {
-	b, err := ioutil.ReadFile(name)
+//func readConfig(name string) (*userConfig, error) {
+func readConfig() (*userConfig, error) {
+	b, err := ioutil.ReadFile(filepath.Join(configDir, accountFile))
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +74,7 @@ func readConfig(name string) (*userConfig, error) {
 	if err := json.Unmarshal(b, uc); err != nil {
 		return nil, err
 	}
-	if key, err := readKey(keyPath(name)); err == nil {
+	if key, err := readKey(filepath.Join(configDir, accountKey)); err == nil {
 		uc.key = key
 	}
 	return uc, nil
@@ -92,18 +83,16 @@ func readConfig(name string) (*userConfig, error) {
 // writeConfig writes uc to a file specified by path, creating paret dirs
 // along the way. If file does not exists, it will be created with 0600 mod.
 // This function does not store uc.key.
-func writeConfig(path string, uc *userConfig) error {
-	d := filepath.Dir(path)
-	if d != "" {
-		if err := os.MkdirAll(d, 0700); err != nil {
-			return err
-		}
-	}
+//func writeConfig(path string, uc *userConfig) error {
+func writeConfig(uc *userConfig) error {
 	b, err := json.MarshalIndent(uc, "", "  ")
 	if err != nil {
 		return err
 	}
-	return ioutil.WriteFile(path, b, 0600)
+	if err := os.MkdirAll(configDir, 0700); err != nil {
+		return err
+	}
+	return ioutil.WriteFile(filepath.Join(configDir, accountFile), b, 0600)
 }
 
 // readKey reads a private rsa key from path.
@@ -154,6 +143,11 @@ func anyKey(filename string, gen bool) (*rsa.PrivateKey, error) {
 		return nil, err
 	}
 	return k, writeKey(filename, k)
+}
+
+// sameDir returns filename path placing it in the same dir as existing file.
+func sameDir(existing, filename string) string {
+	return filepath.Join(filepath.Dir(existing), filename)
 }
 
 // printAccount outputs account into into w using tabwriter.
