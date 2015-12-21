@@ -41,7 +41,7 @@ See also: goacme help account.
 		`,
 	}
 
-	regDisco discoAlias = defaultDisco
+	regDisco = defaultDiscoFlag
 	regGen   bool
 )
 

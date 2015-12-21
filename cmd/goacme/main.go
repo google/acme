@@ -21,6 +21,7 @@ import (
 )
 
 // defaultDisco is the default CA directory endpoint.
+// It should match one of discoAliases map keys.
 const defaultDisco = "letsencrypt"
 
 var (
@@ -29,6 +30,10 @@ var (
 		"letsencrypt":         "https://acme-v01.api.letsencrypt.org/directory",
 		"letsencrypt-staging": "https://acme-staging.api.letsencrypt.org/directory",
 	}
+
+	// defaultDiscoFlag is the default value for -d argument
+	// It must not be modified
+	defaultDiscoFlag = discoAliasFlag(discoAliases[defaultDisco])
 
 	// commands lists all available commands and help topics.
 	// The order here is the order in which they are printed by 'goacme help'.
@@ -151,17 +156,17 @@ func (c *command) Runnable() bool {
 	return c.run != nil
 }
 
-// discoAlias is a flag which can resolve discoAliases.
-type discoAlias string
+// discoAliasFlag is a flag which can resolve discoAliases.
+type discoAliasFlag string
 
-func (df *discoAlias) String() string {
-	return string(*df)
+func (a *discoAliasFlag) String() string {
+	return string(*a)
 }
 
-func (df *discoAlias) Set(v string) error {
+func (a *discoAliasFlag) Set(v string) error {
 	if a, ok := discoAliases[v]; ok {
 		v = a
 	}
-	*df = discoAlias(v)
+	*a = discoAliasFlag(v)
 	return nil
 }

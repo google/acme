@@ -50,10 +50,10 @@ Default location of the config dir is
 		`,
 	}
 
-	certDisco   discoAlias = defaultDisco
-	certAddr               = "127.0.0.1:8080"
-	certExpiry             = 365 * 12 * time.Hour
-	certBundle             = true
+	certDisco   = defaultDiscoFlag
+	certAddr    = "127.0.0.1:8080"
+	certExpiry  = 365 * 12 * time.Hour
+	certBundle  = true
 	certKeypath string
 )
 
