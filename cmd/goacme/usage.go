@@ -46,7 +46,7 @@ Default location of the account config dir is
 {{.ConfigDir}}.
 
 Use -c argument with any goacme command to override the default location
-of the config dir.
+of the config dir. Alternatively, set ACME_CONFIG environment variable.
 		`,
 	}
 

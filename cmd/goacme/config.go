@@ -47,6 +47,10 @@ const (
 var configDir string
 
 func init() {
+	configDir = os.Getenv("ACME_CONFIG")
+	if configDir != "" {
+		return
+	}
 	if u, err := user.Current(); err == nil {
 		configDir = filepath.Join(u.HomeDir, ".config", "acme")
 	}
