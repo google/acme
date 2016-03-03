@@ -139,7 +139,7 @@ func TestJWKThumbprint(t *testing.T) {
 	e := new(big.Int).SetBytes(bytes)
 
 	pub := &rsa.PublicKey{N: n, E: int(e.Uint64())}
-	th := jwkThumbprint(pub)
+	th := JWKThumbprint(pub)
 	if th != expected {
 		t.Errorf("th = %q; want %q", th, expected)
 	}

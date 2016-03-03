@@ -474,7 +474,7 @@ func retryAfter(v string) time.Duration {
 
 // keyAuth generates a key authorization string for a given token.
 func keyAuth(pub *rsa.PublicKey, token string) string {
-	return fmt.Sprintf("%s.%s", token, jwkThumbprint(pub))
+	return fmt.Sprintf("%s.%s", token, JWKThumbprint(pub))
 }
 
 // Error is an ACME error.

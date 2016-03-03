@@ -65,9 +65,9 @@ func jwkEncode(pub *rsa.PublicKey) string {
 	)
 }
 
-// jwkThumbprint creates a JWK thumbprint out of pub
+// JWKThumbprint creates a JWK thumbprint out of pub
 // as specified in https://tools.ietf.org/html/rfc7638.
-func jwkThumbprint(pub *rsa.PublicKey) string {
+func JWKThumbprint(pub *rsa.PublicKey) string {
 	jwk := jwkEncode(pub)
 	h := sha256.New()
 	h.Write([]byte(jwk))
