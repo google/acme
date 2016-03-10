@@ -232,7 +232,7 @@ func (c *Client) GetAuthz(url string) (*Authorization, error) {
 		return nil, err
 	}
 	defer res.Body.Close()
-	if res.StatusCode != http.StatusOK {
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusAccepted {
 		return nil, responseError(res)
 	}
 	az := &Authorization{URI: url}
