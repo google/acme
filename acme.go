@@ -242,6 +242,25 @@ func (c *Client) GetAuthz(url string) (*Authorization, error) {
 	return az, nil
 }
 
+// GetChallenge retrieves the current status of an challenge.
+//
+// A client typically polls a challenge status using this method.
+func (c *Client) GetChallenge(url string) (*Challenge, error) {
+	res, err := c.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusAccepted {
+		return nil, responseError(res)
+	}
+	az := &Challenge{URI: url}
+	if err := json.NewDecoder(res.Body).Decode(az); err != nil {
+		return nil, fmt.Errorf("Decode: %v", err)
+	}
+	return az, nil
+}
+
 // Accept informs the server that the client accepts one of its challenges
 // previously obtained with c.Authorize.
 //
