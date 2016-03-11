@@ -21,17 +21,16 @@ import (
 
 func TestResponseError(t *testing.T) {
 	err500 := &Error{Code: 500, Detail: "500 Internal"}
-	errTLS := &Error{Code: 500, Type: ErrTLS, Detail: "TLS err"}
-	errCSR := &Error{Code: 400, Type: ErrBadCSR, Detail: "bad CSR"}
 	tests := []struct {
 		body   string
 		status string
 		code   int
 		err    *Error
+		custom bool
 	}{
-		{"", "500 Internal", 500, err500},
-		{`{"type":"urn:acme:error:tls","detail":"TLS err"}`, "500 Server Error", 500, errTLS},
-		{`{"type":"urn:acme:error:badCSR","detail":"bad CSR","status":400}`, "500 Server Error", 500, errCSR},
+		{"", "500 Internal", 500, err500, true},
+		{`{"type":"urn:acme:error:tls","detail":"TLS err"}`, "500 Server Error", 500, ErrTLS, false},
+		{`{"type":"urn:acme:error:badCSR","detail":"bad CSR","status":400}`, "500 Server Error", 500, ErrBadCSR, false},
 	}
 	for i, test := range tests {
 		res := &http.Response{
@@ -42,6 +41,9 @@ func TestResponseError(t *testing.T) {
 		err := responseError(res)
 		if !reflect.DeepEqual(err, test.err) {
 			t.Errorf("%d: responseError: %+v; want %+v", i, err, test.err)
+		}
+		if !test.custom && err != test.err {
+			t.Errorf("%d: err != test.err", i)
 		}
 	}
 }
