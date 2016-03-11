@@ -476,38 +476,3 @@ func retryAfter(v string) time.Duration {
 func keyAuth(pub *rsa.PublicKey, token string) string {
 	return fmt.Sprintf("%s.%s", token, JWKThumbprint(pub))
 }
-
-// Error is an ACME error.
-type Error struct {
-	Code   int
-	Type   string
-	Detail string
-}
-
-func (e *Error) Error() string {
-	if e.Detail == "" {
-		return e.Type
-	}
-	return e.Detail
-}
-
-func responseError(resp *http.Response) error {
-	b, _ := ioutil.ReadAll(resp.Body)
-	e := &Error{Code: resp.StatusCode}
-	if err := json.Unmarshal(b, e); err == nil {
-		return e
-	}
-	e.Detail = string(b)
-	if e.Detail == "" {
-		e.Detail = resp.Status
-	}
-	return e
-}
-
-// RetryError is a "temporary" error indicating that the request
-// can be retried after the specified duration.
-type RetryError time.Duration
-
-func (re RetryError) Error() string {
-	return fmt.Sprintf("retry after %s", re)
-}
