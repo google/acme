@@ -1,4 +1,4 @@
-// Copyright 2015 Google Inc. All Rights Reserved.
+// Copyright 2014 Google Inc. All Rights Reserved.
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -236,6 +236,25 @@ func (c *Client) GetAuthz(url string) (*Authorization, error) {
 		return nil, responseError(res)
 	}
 	az := &Authorization{URI: url}
+	if err := json.NewDecoder(res.Body).Decode(az); err != nil {
+		return nil, fmt.Errorf("Decode: %v", err)
+	}
+	return az, nil
+}
+
+// GetChallenge retrieves the current status of an challenge.
+//
+// A client typically polls a challenge status using this method.
+func (c *Client) GetChallenge(url string) (*Challenge, error) {
+	res, err := c.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK && res.StatusCode != http.StatusAccepted {
+		return nil, responseError(res)
+	}
+	az := &Challenge{URI: url}
 	if err := json.NewDecoder(res.Body).Decode(az); err != nil {
 		return nil, fmt.Errorf("Decode: %v", err)
 	}
