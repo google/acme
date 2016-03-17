@@ -14,23 +14,26 @@ package goacme
 import (
 	"io/ioutil"
 	"net/http"
-	"reflect"
 	"strings"
 	"testing"
 )
 
 func TestResponseError(t *testing.T) {
-	err500 := &Error{Code: 500, Detail: "500 Internal"}
+	err500 := &Error{Status: 500, Detail: "500 Internal"}
+	errTLS := &Error{Status: 500, Type: ErrTLS, Detail: "TLS err"}
+	errMal := &Error{Status: 409, Type: ErrMalformed, Detail: "Already in use"}
 	tests := []struct {
 		body   string
 		status string
 		code   int
 		err    *Error
-		custom bool
 	}{
-		{"", "500 Internal", 500, err500, true},
-		{`{"type":"urn:acme:error:tls","detail":"TLS err"}`, "500 Server Error", 500, ErrTLS, false},
-		{`{"type":"urn:acme:error:badCSR","detail":"bad CSR","status":400}`, "500 Server Error", 500, ErrBadCSR, false},
+		// won't unmarshal: should take resp.Status and .StatusCode
+		{"", "500 Internal", 500, err500},
+		// no "status" in JSON error: should take it from resp.Status
+		{`{"type":"urn:acme:error:tls","detail":"TLS err"}`, "500 Server Error", 500, errTLS},
+		// resp.StatusCode and "status" JSON field different: make sure we prefer what's in the JSON error
+		{`{"type":"urn:acme:error:malformed","detail":"Already in use","status":409}`, "400 Bad Request", 400, errMal},
 	}
 	for i, test := range tests {
 		res := &http.Response{
@@ -38,12 +41,18 @@ func TestResponseError(t *testing.T) {
 			Status:     test.status,
 			StatusCode: test.code,
 		}
-		err := responseError(res)
-		if !reflect.DeepEqual(err, test.err) {
-			t.Errorf("%d: responseError: %+v; want %+v", i, err, test.err)
+		err := responseError(res).(*Error)
+		if err.Status != test.err.Status {
+			t.Errorf("%d: err.Status = %d; want %d", i, err.Status, test.err.Status)
 		}
-		if !test.custom && err != test.err {
-			t.Errorf("%d: err != test.err", i)
+		if err.Type != test.err.Type {
+			t.Errorf("%d: err.Type = %q; want %q", i, err.Type, test.err.Type)
+		}
+		if err.Detail != test.err.Detail {
+			t.Errorf("%d: err.Detail = %q; want %q", i, err.Detail, test.err.Detail)
+		}
+		if err.Response != res {
+			t.Errorf("%d: err.Response = %p; want %p", i, err.Response, res)
 		}
 	}
 }

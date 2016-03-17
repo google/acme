@@ -19,74 +19,48 @@ import (
 	"time"
 )
 
+// Predefined Error.Type values by the ACME spec.
 const (
-	errtBadCSR       = "urn:acme:error:badCSR"
-	errtBadNonce     = "urn:acme:error:badNonce"
-	errtConnection   = "urn:acme:error:connection"
-	errtDNSSec       = "urn:acme:error:dnssec"
-	errtMalformed    = "urn:acme:error:malformed"
-	errtInternal     = "urn:acme:error:serverInternal"
-	errtTLS          = "urn:acme:error:tls"
-	errtUnauthorized = "urn:acme:error:unauthorized"
-	errtUnknownHost  = "urn:acme:error:unknownHost"
-	errtRateLimited  = "urn:acme:error:rateLimited"
+	ErrBadCSR       = "urn:acme:error:badCSR"
+	ErrBadNonce     = "urn:acme:error:badNonce"
+	ErrConnection   = "urn:acme:error:connection"
+	ErrDNSSec       = "urn:acme:error:dnssec"
+	ErrMalformed    = "urn:acme:error:malformed"
+	ErrInternal     = "urn:acme:error:serverInternal"
+	ErrTLS          = "urn:acme:error:tls"
+	ErrUnauthorized = "urn:acme:error:unauthorized"
+	ErrUnknownHost  = "urn:acme:error:unknownHost"
+	ErrRateLimited  = "urn:acme:error:rateLimited"
 )
-
-// Errors predefined by the ACME spec.
-var (
-	ErrBadCSR       = &Error{400, errtBadCSR, "CSR is unacceptable"}
-	ErrBadNonce     = &Error{400, errtBadNonce, "Unacceptable anti-replay nonce"}
-	ErrConnection   = &Error{500, errtConnection, "Could not connect to the client for DV"}
-	ErrDNSSec       = &Error{500, errtDNSSec, "Could not validate a DNSSEC signed domain"}
-	ErrMalformed    = &Error{400, errtMalformed, "Request message is malformed"}
-	ErrInternal     = &Error{500, errtInternal, "Internal Server Error"}
-	ErrTLS          = &Error{500, errtTLS, "TLS error during DV"}
-	ErrUnauthorized = &Error{401, errtUnauthorized, "Client lacks sufficient authorization"}
-	ErrUnknownHost  = &Error{500, errtUnknownHost, "Could not resolve domain name"}
-	ErrRateLimited  = &Error{429, errtRateLimited, "Request exceeds rate limit"}
-)
-
-// acmeErrors maps ACME error type to a pre-defined error.
-var acmeErrors = map[ErrorType]error{
-	errtBadCSR:       ErrBadCSR,
-	errtBadNonce:     ErrBadNonce,
-	errtConnection:   ErrConnection,
-	errtDNSSec:       ErrDNSSec,
-	errtMalformed:    ErrMalformed,
-	errtInternal:     ErrInternal,
-	errtTLS:          ErrTLS,
-	errtUnauthorized: ErrUnauthorized,
-	errtUnknownHost:  ErrUnknownHost,
-	errtRateLimited:  ErrRateLimited,
-}
-
-// ErrorType is used to define a set of errors predefined by the ACME spec.
-type ErrorType string
 
 // Error is an ACME error.
 type Error struct {
-	Code   int `json:"status"`
-	Type   ErrorType
+	Status int
+	Type   string
 	Detail string
+	// Response is the original server response used to construct the Error,
+	// with Response.Body closed.
+	Response *http.Response `json:"-"`
 }
 
 func (e *Error) Error() string {
-	return fmt.Sprintf("%d %s: %s", e.Code, e.Type, e.Detail)
+	return fmt.Sprintf("%d %s: %s", e.Status, e.Type, e.Detail)
 }
 
 // responseError creates an error of Error type from resp.
 func responseError(resp *http.Response) error {
+	// don't care if ReadAll returns an error:
+	// json.Unmarshal will fail in that case anyway
 	b, _ := ioutil.ReadAll(resp.Body)
-	e := &Error{Code: resp.StatusCode}
+	e := &Error{Status: resp.StatusCode, Response: resp}
 	if err := json.Unmarshal(b, e); err != nil {
+		// this is not a regular error response:
+		// populate detail with anything we received,
+		// e.Status will already contain HTTP response code value
 		e.Detail = string(b)
 		if e.Detail == "" {
 			e.Detail = resp.Status
 		}
-		return e
-	}
-	if err, ok := acmeErrors[e.Type]; ok {
-		return err
 	}
 	return e
 }
