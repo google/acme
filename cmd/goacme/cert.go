@@ -16,6 +16,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -28,7 +30,7 @@ import (
 var (
 	cmdCert = &command{
 		run:       runCert,
-		UsageLine: "cert [-c config] [-d url] [-s host:port] [-k key] [-expiry dur] [-bundle=false] domain",
+		UsageLine: "cert [-c config] [-d url] [-s host:port] [-k key] [-expiry dur] [-bundle=true] [-manual=false] domain [domain ...]",
 		Short:     "request a new certificate",
 		Long: `
 Cert creates a new certificate for the given domain.
@@ -45,6 +47,9 @@ If this is undesired, specify -bundle=false argument.
 The -s argument specifies the address where to run local server
 for the http-01 challenge. If not specified, 127.0.0.1:8080 will be used.
 
+An alternative to local server challenge response may be specified as -manual,
+in which case instructions are displayed on the standard output.
+
 Default location of the config dir is
 {{.ConfigDir}}.
 		`,
@@ -54,6 +59,7 @@ Default location of the config dir is
 	certAddr    = "127.0.0.1:8080"
 	certExpiry  = 365 * 12 * time.Hour
 	certBundle  = true
+	certManual  = false
 	certKeypath string
 )
 
@@ -62,6 +68,7 @@ func init() {
 	cmdCert.flag.StringVar(&certAddr, "s", certAddr, "")
 	cmdCert.flag.DurationVar(&certExpiry, "expiry", certExpiry, "")
 	cmdCert.flag.BoolVar(&certBundle, "bundle", certBundle, "")
+	cmdCert.flag.BoolVar(&certManual, "manual", certManual, "")
 	cmdCert.flag.StringVar(&certKeypath, "k", "", "")
 }
 
@@ -92,6 +99,9 @@ func runCert(args []string) {
 	req := &x509.CertificateRequest{
 		Subject: pkix.Name{CommonName: cn},
 	}
+	if len(args) > 1 {
+		req.DNSNames = args
+	}
 	csr, err := x509.CreateCertificateRequest(rand.Reader, req, certKey)
 	if err != nil {
 		fatalf("csr: %v", err)
@@ -104,53 +114,19 @@ func runCert(args []string) {
 	}
 	// initialize acme client and start authz flow
 	// we only look for http-01 challenges at the moment
-	client := goacme.Client{Key: uc.key}
-	authz, err := client.Authorize(uc.Authz, cn)
-	if err != nil {
-		fatalf("authorize: %v", err)
-	}
-	var chal *goacme.Challenge
-	for _, c := range authz.Challenges {
-		if c.Type == "http-01" {
-			chal = &c
-			break
+	client := &goacme.Client{Key: uc.key}
+	for _, domain := range args {
+		if err := authz(client, uc.Authz, domain); err != nil {
+			fatalf("%s: %v", domain, err)
 		}
 	}
-	if chal == nil {
-		fatalf("no supported challenge found")
-	}
-
-	// respond to http-01 challenge
-	ln, err := net.Listen("tcp", certAddr)
-	if err != nil {
-		fatalf("listen %s: %v", certAddr, err)
-	}
-	go http.Serve(ln, client.HTTP01Handler(chal.Token))
-	if _, err := client.Accept(chal); err != nil {
-		fatalf("accept challenge: %v", err)
-	}
-	for {
-		a, err := client.GetAuthz(authz.URI)
-		if err != nil {
-			errorf("authz %q: %v\n", authz.URI, err)
-		}
-		if a.Status == goacme.StatusInvalid {
-			fatalf("could not get certificate for %s", cn)
-		}
-		if a.Status != goacme.StatusValid {
-			// TODO: use Retry-After
-			time.Sleep(time.Duration(3) * time.Second)
-			continue
-		}
-		break
-	}
-	ln.Close()
 
 	// challenge fulfilled: get the cert
 	cert, curl, err := client.CreateCert(disco.CertURL, csr, certExpiry, certBundle)
 	if err != nil {
 		fatalf("cert: %v", err)
 	}
+	logf("cert url: %s", curl)
 	if cert == nil {
 		cert = pollCert(curl)
 	}
@@ -165,6 +141,66 @@ func runCert(args []string) {
 	}
 }
 
+func authz(client *goacme.Client, zurl, domain string) error {
+	z, err := client.Authorize(zurl, domain)
+	if err != nil {
+		return err
+	}
+	var chal *goacme.Challenge
+	for _, c := range z.Challenges {
+		if c.Type == "http-01" {
+			chal = &c
+			break
+		}
+	}
+	if chal == nil {
+		return errors.New("no supported challenge found")
+	}
+
+	// respond to http-01 challenge
+	ln, err := net.Listen("tcp", certAddr)
+	if err != nil {
+		return fmt.Errorf("listen %s: %v", certAddr, err)
+	}
+	defer ln.Close()
+
+	if certManual {
+		// manual challenge response
+		tok := fmt.Sprintf("%s.%s", chal.Token, goacme.JWKThumbprint(&client.Key.PublicKey))
+		file, err := challengeFile(domain, tok)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Copy %s to ROOT/.well-known/acme-challenge/%s of %s and press enter.\n",
+			file, chal.Token, domain)
+		var x string
+		fmt.Scanln(&x)
+	} else {
+		// auto, via local server
+		go http.Serve(ln, client.HTTP01Handler(chal.Token))
+	}
+
+	if _, err := client.Accept(chal); err != nil {
+		return fmt.Errorf("accept challenge: %v", err)
+	}
+	for {
+		a, err := client.GetAuthz(z.URI)
+		if err != nil {
+			logf("authz %q: %v\n", z.URI, err)
+		}
+		if a.Status == goacme.StatusInvalid {
+			return fmt.Errorf("could not authorize for %s", domain)
+		}
+		if a.Status != goacme.StatusValid {
+			// TODO: use Retry-After
+			time.Sleep(time.Duration(3) * time.Second)
+			continue
+		}
+		break
+	}
+	return nil
+}
+
 func pollCert(url string) [][]byte {
 	for {
 		b, err := goacme.FetchCert(nil, url, certBundle)
@@ -177,4 +213,16 @@ func pollCert(url string) [][]byte {
 		}
 		time.Sleep(d)
 	}
+}
+
+func challengeFile(domain, content string) (string, error) {
+	f, err := ioutil.TempFile("", domain)
+	if err != nil {
+		return "", err
+	}
+	_, err = fmt.Fprint(f, content)
+	if err1 := f.Close(); err1 != nil && err == nil {
+		err = err1
+	}
+	return f.Name(), err
 }
