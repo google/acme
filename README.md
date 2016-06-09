@@ -31,8 +31,8 @@ Next, review the terms and if you agree, you can accept them like so:
 
 Now, we are ready to request our certificate. To do this, we need a private key for the domain first.
 
-    openssl -out ~/.config/acme/www.domain.com.key 2048
-    goacme cert www.domain.com
+    openssl -out ~/.config/acme/example.com.key 2048
+    goacme cert -k path/to/example.com.key example.com
 
 ## License
 
