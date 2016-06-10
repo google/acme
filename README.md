@@ -29,10 +29,14 @@ Next, review the terms and if you agree, you can accept them like so:
 
     goacme update -accept
 
-Now, we are ready to request our certificate. To do this, we need a private key for the domain first.
+    Now, we are ready to request our certificate. The certificate will be placed alongside key file, specified with the `-k` argument. If the key file does not exist, a new one will be created. If you would prefer to generate the key yourself, this may be done using openssl or a similar tool, and has been included / shown in the example below. `goacme cert` currently implements only the HTTP challenge mechanism, which requires the command to be run in a way the challenge can be resolved on the same machine, i.e. it's running a local HTTP server for the duration of authorization phase.
 
-    openssl -out ~/.config/acme/example.com.key 2048
-    goacme cert -k path/to/example.com.key example.com
+    # Manually Generated Private Domain Key
+    openssl genrsa -out ~/.config/acme/example.com.key 2048
+    goacme cert example.com
+
+    # Automatically Generated Private Domain Key
+    goacme cert example.com
 
 ## License
 
