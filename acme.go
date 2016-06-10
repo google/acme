@@ -11,6 +11,8 @@
 
 // Package goacme provides an ACME client implementation.
 // See https://tools.ietf.org/html/draft-barnes-acme-04 spec for details.
+//
+// This package is a work in progress and makes no API stability promises.
 package goacme
 
 import (

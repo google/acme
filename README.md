@@ -8,6 +8,8 @@ Contents of this repo:
 * `/` - ACME client Go package
 * `cmd/goacme/` - cli tool, similar to the official `letsencrypt`
 
+*This package is a work in progress and makes no API stability promises.*
+
 ## Usage
 
 Optionally, if you would not like `goacme` to generate the account key for you,
