@@ -14,6 +14,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"html/template"
 	"log"
 	"os"
 	"strings"
@@ -130,6 +131,15 @@ type command struct {
 	// 'goacme help <command>' output.
 	// The template context is longTemplateData.
 	Long string
+
+	// ConfigDir is the configuration directory which is used
+	ConfigDir string
+
+	// DefaultDisco is the default CA directory endpoint.
+	DefaultDisco string
+
+	// AccountFile is the default user config file name.
+	AccountFile string
 }
 
 // Name returns the command's name: the first word in the usage line.
@@ -145,8 +155,23 @@ func (c *command) Name() string {
 // Usage reports command's usage to stderr, including long description,
 // and exits with code 2.
 func (c *command) Usage() {
+	c.ConfigDir = configDir
+	c.DefaultDisco = defaultDisco
+	c.AccountFile = accountFile
+
+	t := template.New("Long Description")
+	t.Funcs(template.FuncMap{
+		"trim":       strings.TrimSpace,
+		"capitalize": capitalize,
+	})
+	template.Must(t.Parse(c.Long))
+
 	fmt.Fprintf(os.Stderr, "usage: %s\n\n", c.UsageLine)
-	fmt.Fprintf(os.Stderr, "%s\n", strings.TrimSpace(c.Long))
+	err := t.Execute(os.Stderr, c)
+	if err != nil {
+		panic(err)
+	}
+
 	os.Exit(2)
 }
 
