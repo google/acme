@@ -22,15 +22,15 @@ func TestDiscoAliasFlag(t *testing.T) {
 		{defaultDisco, []string{"-d", "https://disco"}, "https://disco"},
 	}
 	for i, test := range tests {
-		var a discoAliasFlag = test.a
+		var daf = test.a
 		fs := flag.NewFlagSet("test", flag.ContinueOnError)
-		fs.Var(&a, "d", "")
+		fs.Var(&daf, "d", "")
 		if err := fs.Parse(test.args); err != nil {
 			t.Errorf("%d: parse(%v): %v", i, test.args, err)
 			continue
 		}
-		if a.String() != test.want {
-			t.Errorf("%d: a = %q; want %q", i, a, test.want)
+		if daf.String() != test.want {
+			t.Errorf("%d: a = %q; want %q", i, daf, test.want)
 		}
 	}
 }
