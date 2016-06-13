@@ -24,7 +24,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/google/goacme"
+	"github.com/google/acme"
 )
 
 var (
@@ -108,13 +108,13 @@ func runCert(args []string) {
 	}
 
 	// perform discovery to get the new-cert URL
-	disco, err := goacme.Discover(nil, string(certDisco))
+	disco, err := acme.Discover(nil, string(certDisco))
 	if err != nil {
 		fatalf("discovery: %v", err)
 	}
 	// initialize acme client and start authz flow
 	// we only look for http-01 challenges at the moment
-	client := &goacme.Client{Key: uc.key}
+	client := &acme.Client{Key: uc.key}
 	for _, domain := range args {
 		if err := authz(client, uc.Authz, domain); err != nil {
 			fatalf("%s: %v", domain, err)
@@ -141,12 +141,12 @@ func runCert(args []string) {
 	}
 }
 
-func authz(client *goacme.Client, zurl, domain string) error {
+func authz(client *acme.Client, zurl, domain string) error {
 	z, err := client.Authorize(zurl, domain)
 	if err != nil {
 		return err
 	}
-	var chal *goacme.Challenge
+	var chal *acme.Challenge
 	for _, c := range z.Challenges {
 		if c.Type == "http-01" {
 			chal = &c
@@ -166,7 +166,7 @@ func authz(client *goacme.Client, zurl, domain string) error {
 
 	if certManual {
 		// manual challenge response
-		tok := fmt.Sprintf("%s.%s", chal.Token, goacme.JWKThumbprint(&client.Key.PublicKey))
+		tok := fmt.Sprintf("%s.%s", chal.Token, acme.JWKThumbprint(&client.Key.PublicKey))
 		file, err := challengeFile(domain, tok)
 		if err != nil {
 			return err
@@ -188,10 +188,10 @@ func authz(client *goacme.Client, zurl, domain string) error {
 		if err != nil {
 			logf("authz %q: %v\n", z.URI, err)
 		}
-		if a.Status == goacme.StatusInvalid {
+		if a.Status == acme.StatusInvalid {
 			return fmt.Errorf("could not authorize for %s", domain)
 		}
-		if a.Status != goacme.StatusValid {
+		if a.Status != acme.StatusValid {
 			// TODO: use Retry-After
 			time.Sleep(time.Duration(3) * time.Second)
 			continue
@@ -203,12 +203,12 @@ func authz(client *goacme.Client, zurl, domain string) error {
 
 func pollCert(url string) [][]byte {
 	for {
-		b, err := goacme.FetchCert(nil, url, certBundle)
+		b, err := acme.FetchCert(nil, url, certBundle)
 		if err == nil {
 			return b
 		}
 		d := 3 * time.Second
-		if re, ok := err.(goacme.RetryError); ok {
+		if re, ok := err.(acme.RetryError); ok {
 			d = time.Duration(re)
 		}
 		time.Sleep(d)

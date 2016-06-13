@@ -16,17 +16,17 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/goacme"
+	"github.com/google/acme"
 )
 
 func TestConfigReadWrite(t *testing.T) {
-	dir, err := ioutil.TempDir("", "goacme-config")
+	dir, err := ioutil.TempDir("", "acme-config")
 	if err != nil {
 		t.Fatal(err)
 	}
 	configDir = dir
 	write := &userConfig{
-		Account: goacme.Account{
+		Account: acme.Account{
 			URI:            "https://example.com/acme/reg/123",
 			Contact:        []string{"mailto:dude@example.com"},
 			AgreedTerms:    "http://agreed",

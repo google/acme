@@ -12,23 +12,23 @@ import (
 )
 
 var (
-	usageTemplate = `goacme is a client tool for managing certificates
+	usageTemplate = `acme is a client tool for managing certificates
 with ACME-compliant servers.
 
 Usage:
-	goacme command [arguments]
+	acme command [arguments]
 
 The commands are:
 {{range .}}{{if .Runnable}}
 	{{.Name | printf "%-11s"}} {{.Short}}{{end}}{{end}}
 
-Use "goacme help [command]" for more information about a command.
+Use "acme help [command]" for more information about a command.
 
 Additional help topics:
 {{range .}}{{if not .Runnable}}
 	{{.Name | printf "%-11s"}} {{.Short}}{{end}}{{end}}
 
-Use "goacme help [topic]" for more information about that topic.
+Use "acme help [topic]" for more information about that topic.
 
 `
 	helpAccount = &command{
@@ -45,7 +45,7 @@ private key is kept in {{.AccountKey}} file.
 Default location of the account config dir is
 {{.ConfigDir}}.
 
-Use -c argument with any goacme command to override the default location
+Use -c argument with any acme command to override the default location
 of the config dir. Alternatively, set ACME_CONFIG environment variable.
 		`,
 	}
@@ -111,7 +111,7 @@ func capitalize(s string) string {
 	return string(unicode.ToTitle(r)) + s[n:]
 }
 
-// usage prints goacme usage to stderr and exits with code 2.
+// usage prints acme usage to stderr and exits with code 2.
 func usage() {
 	printUsage(os.Stderr)
 	os.Exit(2)
@@ -130,14 +130,14 @@ func help(args []string) {
 		return
 	}
 	if len(args) != 1 {
-		fatalf("usage: goacme help command\n\nToo many arguments given.\n")
+		fatalf("usage: acme help command\n\nToo many arguments given.\n")
 	}
 
 	arg := args[0]
 	for _, cmd := range commands {
 		if cmd.Name() == arg {
 			if cmd.Runnable() {
-				fmt.Fprintf(os.Stdout, "usage: goacme %s\n", cmd.UsageLine)
+				fmt.Fprintf(os.Stdout, "usage: acme %s\n", cmd.UsageLine)
 			}
 			data := struct {
 				ConfigDir    string
@@ -157,5 +157,5 @@ func help(args []string) {
 		}
 	}
 
-	fatalf("Unknown help topic %q. Run 'goacme help'.\n", arg)
+	fatalf("Unknown help topic %q. Run 'acme help'.\n", arg)
 }

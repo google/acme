@@ -36,7 +36,7 @@ var (
 	defaultDiscoFlag = discoAliasFlag(discoAliases[defaultDisco])
 
 	// commands lists all available commands and help topics.
-	// The order here is the order in which they are printed by 'goacme help'.
+	// The order here is the order in which they are printed by 'acme help'.
 	commands = []*command{
 		cmdReg,
 		cmdWho,
@@ -100,7 +100,7 @@ func main() {
 		}
 	}
 
-	fatalf("Unknown subcommand %q.\nRun 'goacme help' for usage.\n", args[0])
+	fatalf("Unknown subcommand %q.\nRun 'acme help' for usage.\n", args[0])
 }
 
 // addFlags adds flags common to all goacmd subcommands.
@@ -109,8 +109,8 @@ func addFlags(f *flag.FlagSet) {
 	f.StringVar(&configDir, "c", configDir, "")
 }
 
-// A command is an implementation of a goacme command
-// like goacme reg or goacme whoami.
+// A command is an implementation of a acme command
+// like acme reg or acme whoami.
 type command struct {
 	// run runs the command.
 	// The args are the arguments after the command name.
@@ -123,11 +123,11 @@ type command struct {
 	// The first word in the line is taken to be the command name.
 	UsageLine string
 
-	// Short is the short description shown in the 'goacme help' output.
+	// Short is the short description shown in the 'acme help' output.
 	Short string
 
 	// Long is the detailed command description template shown in
-	// 'goacme help <command>' output.
+	// 'acme help <command>' output.
 	// The template context is longTemplateData.
 	Long string
 }

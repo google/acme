@@ -14,7 +14,7 @@ package main
 import (
 	"path/filepath"
 
-	"github.com/google/goacme"
+	"github.com/google/acme"
 )
 
 var (
@@ -25,7 +25,7 @@ var (
 		Long: `
 Reg creates a new account at a CA using the discovery URL
 specified with -d argument. The default value is {{.DefaultDisco}}.
-For more information about the discovery run goacme help disco.
+For more information about the discovery run acme help disco.
 
 Upon successful registration, a new config will be written to {{.AccountFile}}
 in the directory specified with -c argument. Default location of the config dir
@@ -37,7 +37,7 @@ Contact arguments can be anything: email, phone number, etc.
 If -gen flag is not specified, and an account key does not exist, the command
 will exit with an error.
 
-See also: goacme help account.
+See also: acme help account.
 		`,
 	}
 
@@ -56,17 +56,17 @@ func runReg(args []string) {
 		fatalf("account key: %v", err)
 	}
 	uc := &userConfig{
-		Account: goacme.Account{Contact: args},
+		Account: acme.Account{Contact: args},
 		key:     key,
 	}
 
 	// perform discovery to get the reg url
-	urls, err := goacme.Discover(nil, string(regDisco))
+	urls, err := acme.Discover(nil, string(regDisco))
 	if err != nil {
 		fatalf("discovery: %v", err)
 	}
 	// do the registration
-	client := goacme.Client{Key: uc.key}
+	client := acme.Client{Key: uc.key}
 	if err := client.Register(urls.RegURL, &uc.Account); err != nil {
 		fatalf("%v", err)
 	}

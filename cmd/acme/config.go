@@ -26,7 +26,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/google/goacme"
+	"github.com/google/acme"
 )
 
 const (
@@ -39,7 +39,7 @@ const (
 	rsaPrivateKey = "RSA PRIVATE KEY"
 )
 
-// configDir is goacme configuration dir.
+// configDir is acme configuration dir.
 // It may be empty string.
 //
 // The value is initialized at startup and is also allowed to be modified
@@ -58,7 +58,7 @@ func init() {
 
 // userConfig is configuration for a single ACME CA account.
 type userConfig struct {
-	goacme.Account
+	acme.Account
 	CA string `json:"ca"` // CA discovery URL
 
 	// key is stored separately
@@ -155,7 +155,7 @@ func sameDir(existing, filename string) string {
 }
 
 // printAccount outputs account into into w using tabwriter.
-func printAccount(w io.Writer, a *goacme.Account, kp string) {
+func printAccount(w io.Writer, a *acme.Account, kp string) {
 	tw := tabwriter.NewWriter(w, 0, 8, 0, '\t', 0)
 	fmt.Fprintln(tw, "URI:\t", a.URI)
 	fmt.Fprintln(tw, "Key:\t", kp)

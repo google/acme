@@ -15,7 +15,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/google/goacme"
+	"github.com/google/acme"
 )
 
 var (
@@ -51,7 +51,7 @@ func runUpdate(args []string) {
 		fatalf("no key found for %s", uc.URI)
 	}
 
-	client := goacme.Client{Key: uc.key}
+	client := acme.Client{Key: uc.key}
 	if updateAccept {
 		a, err := client.GetReg(uc.URI)
 		if err != nil {

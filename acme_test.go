@@ -9,7 +9,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package goacme
+package acme
 
 import (
 	"crypto/rand"
@@ -572,7 +572,7 @@ func TestNewCert(t *testing.T) {
 		template := x509.Certificate{
 			SerialNumber: big.NewInt(int64(1)),
 			Subject: pkix.Name{
-				Organization: []string{"goacme"},
+				Organization: []string{"acme"},
 			},
 			NotBefore: notBefore,
 			NotAfter:  notAfter,
@@ -597,7 +597,7 @@ func TestNewCert(t *testing.T) {
 		Version: 0,
 		Subject: pkix.Name{
 			CommonName:   "example.com",
-			Organization: []string{"goacme"},
+			Organization: []string{"acme"},
 		},
 	}
 	csrb, err := x509.CreateCertificateRequest(rand.Reader, &csr, testKey)
