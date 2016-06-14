@@ -135,7 +135,7 @@ func runCert(args []string) {
 	logf("cert url: %s", curl)
 	var pemcert []byte
 	for _, b := range cert {
-		b = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: b})
+		b = pem.EncodeToMemory(&pem.Block{Type: x509PublicKey, Bytes: b})
 		pemcert = append(pemcert, b...)
 	}
 	certPath := sameDir(certKeypath, cn+".crt")

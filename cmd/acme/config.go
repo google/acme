@@ -39,6 +39,7 @@ const (
 
 	rsaPrivateKey = "RSA PRIVATE KEY"
 	ecPrivateKey  = "EC PRIVATE KEY"
+	x509PublicKey = "CERTIFICATE"
 )
 
 // configDir is acme configuration dir.
