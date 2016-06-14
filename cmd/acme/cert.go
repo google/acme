@@ -93,6 +93,18 @@ func runCert(args []string) {
 		fatalf("no key found for %s", uc.URI)
 	}
 
+	// read crt if existent
+	certPath := sameDir(certKeypath, cn+".crt")
+	certCrt, err := readCrt(certPath)
+	if err == nil {
+		// do not re-issue certificate if it's not about to expire in less than one week
+		expiresIn := certCrt.NotAfter.Sub(time.Now())
+		if expiresIn > 24*7*time.Hour {
+			errorf("cert is still valid for more than one week, not renewing")
+			exit()
+		}
+	}
+
 	// read or generate new cert key
 	certKey, err := anyKey(certKeypath, true)
 	if err != nil {
@@ -138,7 +150,6 @@ func runCert(args []string) {
 		b = pem.EncodeToMemory(&pem.Block{Type: x509PublicKey, Bytes: b})
 		pemcert = append(pemcert, b...)
 	}
-	certPath := sameDir(certKeypath, cn+".crt")
 	if err := ioutil.WriteFile(certPath, pemcert, 0644); err != nil {
 		fatalf("write cert: %v", err)
 	}
