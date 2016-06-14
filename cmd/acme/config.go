@@ -123,6 +123,21 @@ func readKey(path string) (crypto.Signer, error) {
 	}
 }
 
+func readCrt(path string) (*x509.Certificate, error) {
+	b, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	d, _ := pem.Decode(b)
+	if d == nil {
+		return nil, fmt.Errorf("no block found in %q", path)
+	}
+	if d.Type != x509PublicKey {
+		return nil, fmt.Errorf("%q is unsupported", d.Type)
+	}
+	return x509.ParseCertificate(d.Bytes)
+}
+
 // writeKey writes k to the specified path in PEM format.
 // If file does not exists, it will be created with 0600 mod.
 func writeKey(path string, k *ecdsa.PrivateKey) error {
