@@ -22,6 +22,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -177,14 +178,18 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 			return err
 		}
 		tok := fmt.Sprintf("%s.%s", chal.Token, thumb)
-		file, err := challengeFile(domain, tok)
+		file, err := challengeFile(chal.Token, domain, tok)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Copy %s to ROOT/.well-known/acme-challenge/%s of %s and press enter.\n",
-			file, chal.Token, domain)
-		var x string
-		fmt.Scanln(&x)
+
+		// If ACME_CHALLENGE_DIR is not set, ask user to move challenge file manually
+		if os.Getenv("ACME_CHALLENGE_DIR") == "" {
+			fmt.Printf("Copy %s to ROOT/.well-known/acme-challenge/%s of %s and press enter.\n",
+				file, chal.Token, domain)
+			var x string
+			fmt.Scanln(&x)
+		}
 	} else {
 		// auto, via local server
 		val, err := client.HTTP01ChallengeResponse(chal.Token)
@@ -203,11 +208,27 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 	return err
 }
 
-func challengeFile(domain, content string) (string, error) {
-	f, err := ioutil.TempFile("", domain)
+func challengeFile(challengeFilename, domain, content string) (string, error) {
+	// If ACME_CHALLENGE_DIR is set, place the challenge into it.
+	// Otherwise, create a temporary file
+	var f *os.File
+	var err error
+	if os.Getenv("ACME_CHALLENGE_DIR") != "" {
+		// Create .well-known directory
+		challengeDir := filepath.Join(os.Getenv("ACME_CHALLENGE_DIR"), ".well-known/acme-challenge")
+		err = os.MkdirAll(challengeDir, 0755)
+		if err != nil {
+			return "", err
+		}
+
+		f, err = os.Create(filepath.Join(challengeDir, challengeFilename))
+	} else {
+		f, err = ioutil.TempFile("", domain)
+	}
 	if err != nil {
 		return "", err
 	}
+
 	_, err = fmt.Fprint(f, content)
 	if err1 := f.Close(); err1 != nil && err == nil {
 		err = err1
