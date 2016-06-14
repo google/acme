@@ -1,64 +1,81 @@
 # acme
 
-ACME Go client library and a command line too.
+ACME-complient Go client library and a command line tool. Neither has 3rd party dependencies.
 Also, see https://letsencrypt.org.
 
 Contents of this repo:
 
-* `/` - ACME client Go package
-* `cmd/acme/` - cli tool, similar to the official `letsencrypt`
+* `/` - ACME client Go package. See [godoc for acme package](https://godoc.org/github.com/google/acme).
+  The package has been imported to golang.org/x/crypto/acme/internal/acme. I will keep
+  github.com/google/acme package mirroring crypto/acme/internal/acme until it becomes exported
+  as `golang.org/x/crypto/acme`.
+* `/cmd/acme/` - cli tool, similar to the official `letsencrypt`.
 
 *This package is a work in progress and makes no API stability promises.*
 
-## Usage
+## command line tool usage
 
-Optionally, if you would not like `acme` to generate the account key for you,
-you should create an unencrypted private key for use with account registration.
-This can be done using OpenSSL:
+Quick install with `go get -u github.com/google/acme/cmd/acme`.
 
-    mkdir -p ~/.config/acme
-    openssl -out ~/.config/acme/account.key 2048
+1. You need to have a user account, registered with the CA. This is represented
+  by an RSA private key.
 
-Next, register an account using the `acme` client. The contact information,
-such as email address at the end, is optional but recommended. If you would like
-to have `acme` generate the account key for you instead of using OpenSSL or
-similar software, specify `-gen` flag. Both examples are shown below, though
-only one should be run depending on the whether you are providing the account
-key or having `acme` generate one.
+  The easiest is to let `acme` tool generate it for you:
 
-    # manually generated account key
-    acme reg mailto:email@example.com
+        acme reg mailto:email@example.com
 
-    # automatically generated account key
-    acme reg -gen mailto:email@example.com
+  If you already have a key or want to generate one manually:
 
-Next, review the terms and, if you agree, accept them like so:
+        mkdir -p ~/config/acme
+        openssl genrsa -out ~/config/acme/account.pem 2048
+        acme reg mailto:email@example.com
 
-    acme update -accept
+  The latter version assumes that default `acme` config dir is `~/config/acme`.
+  Yours may vary. Check with `acme help reg`.
 
-Now, we are ready to request our certificate. The certificate will be placed
-alongside a key file, specified with the `-k` argument. If the key file does not
-exist, a new one will be created.
+  The "mailto:email@example.com" in the example above is a contact argument.
+  While some ACME CA may let you register without providing any contact info,
+  it is recommended to use one. For instance a CA might need to notify
+  cert owners with an update.
 
-If you would prefer to generate the certificate key yourself, this may be done
-using openssl or a similar tool, and shown in the example below.
+2. Agree with the ACME CA Terms of Service.
 
-`acme cert` command currently implements only the HTTP challenge mechanism (http-01).
-This requires the command to be run in a way the challenge can be resolved
-on the same machine, i.e. it's running a local HTTP server for the
-duration of authorization phase. You may also do this manually with the `-manual`
-flag if you have access to where the domain is served from, and `acme cert` will
-print the appropriate instructions.
+  Before requesting your first certificate, you may need to agree with
+  the terms of the CA. You can check the status of our account with:
 
-    # manually generated private cert key, automatic HTTP challenge
-    openssl genrsa -out ~/.config/acme/example.com.key 2048
-    acme cert example.com
+        acme whoami
 
-    # automatically generated private key, automatic HTTP challenge
-    acme cert example.com
+  and look for "Accepted: ..." line. If it says "no", check CA's terms document
+  provided as a link in "Terms: ..." field and agree by executing:
 
-    # automatically generated private key, manual HTTP challenge
-    acme cert -manual example.com
+        acme update -update
+
+3. Request a new certificate for your domain.
+
+  The easiest way to do this is:
+
+        acme cert example.com
+
+  The above command will generate a new certificate key (unless one already exists),
+  and send a certifcate request. The location of the output files is `~/.config.acme`,
+  but depends on your environment. Check with `acme help cert`.
+
+  If you don't want auto-generated cert key, one can always be generated upfront:
+
+        openssl genrsa -out cert.key 2048
+
+  in which case the cert command will look something like this:
+
+        acme cert -k cert.key example.com
+
+  Note that for certificate request command to succeed, it needs to be executed in a way
+  allowing for resolving authorization challenges (domain ownership proof). This typically
+  means the command should be executed on the same host the domain is served from.
+
+  If the latter is not possible, use `-manual` flag and follow the instructions:
+
+        acme cert -manual example.com
+
 
 ## License
 
