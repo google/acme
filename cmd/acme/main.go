@@ -13,7 +13,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -145,8 +144,7 @@ func (c *command) Name() string {
 // Usage reports command's usage to stderr, including long description,
 // and exits with code 2.
 func (c *command) Usage() {
-	fmt.Fprintf(os.Stderr, "usage: %s\n\n", c.UsageLine)
-	fmt.Fprintf(os.Stderr, "%s\n", strings.TrimSpace(c.Long))
+	help([]string{c.Name()})
 	os.Exit(2)
 }
 
