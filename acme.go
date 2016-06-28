@@ -17,6 +17,7 @@ package acme
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -116,7 +117,8 @@ type AuthzID struct {
 // Client implements ACME spec.
 type Client struct {
 	http.Client
-	Key *rsa.PrivateKey
+	// Key.Public() must be *rsa.PublicKey
+	Key crypto.Signer
 }
 
 // CertSource creates new CertSource using client c.
@@ -275,7 +277,7 @@ func (c *Client) Accept(chal *Challenge) (*Challenge, error) {
 	}{
 		Resource: "challenge",
 		Type:     chal.Type,
-		Auth:     keyAuth(&c.Key.PublicKey, chal.Token),
+		Auth:     keyAuth(c.Key.Public().(*rsa.PublicKey), chal.Token),
 	}
 	res, err := c.PostJWS(chal.URI, req)
 	if err != nil {
@@ -322,7 +324,7 @@ func (c *Client) HTTP01Handler(token string) http.Handler {
 			return
 		}
 		w.Header().Set("content-type", "text/plain")
-		w.Write([]byte(keyAuth(&c.Key.PublicKey, token)))
+		w.Write([]byte(keyAuth(c.Key.Public().(*rsa.PublicKey), token)))
 	})
 }
 

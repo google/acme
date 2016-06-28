@@ -13,6 +13,7 @@ package main
 
 import (
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -166,7 +167,7 @@ func authz(client *acme.Client, zurl, domain string) error {
 
 	if certManual {
 		// manual challenge response
-		tok := fmt.Sprintf("%s.%s", chal.Token, acme.JWKThumbprint(&client.Key.PublicKey))
+		tok := fmt.Sprintf("%s.%s", chal.Token, acme.JWKThumbprint(client.Key.Public().(*rsa.PublicKey)))
 		file, err := challengeFile(domain, tok)
 		if err != nil {
 			return err
