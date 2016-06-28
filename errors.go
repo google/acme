@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"time"
 )
 
@@ -71,4 +72,12 @@ type RetryError time.Duration
 
 func (re RetryError) Error() string {
 	return fmt.Sprintf("retry after %s", re)
+}
+
+type UnsupportedKeyError struct {
+	Type reflect.Type
+}
+
+func (e *UnsupportedKeyError) Error() string {
+	return fmt.Sprintf("acme: unsupported key type: %s", e.Type)
 }

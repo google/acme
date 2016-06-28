@@ -25,8 +25,12 @@ import (
 // jwsEncodeJSON signs claimset using provided key and a nonce.
 // The result is serialized in JSON format.
 // See https://tools.ietf.org/html/rfc7515#section-7.
-func jwsEncodeJSON(claimset interface{}, key *rsa.PrivateKey, nonce string) ([]byte, error) {
-	jwk := jwkEncode(&key.PublicKey)
+func jwsEncodeJSON(claimset interface{}, key crypto.Signer, nonce string) ([]byte, error) {
+	pub, err := keyPub(key)
+	if err != nil {
+		return nil, err
+	}
+	jwk := jwkEncode(pub)
 	phead := fmt.Sprintf(`{"alg":"RS256","jwk":%s,"nonce":%q}`, jwk, nonce)
 	phead = base64.RawURLEncoding.EncodeToString([]byte(phead))
 	cs, err := json.Marshal(claimset)
@@ -36,7 +40,7 @@ func jwsEncodeJSON(claimset interface{}, key *rsa.PrivateKey, nonce string) ([]b
 	payload := base64.RawURLEncoding.EncodeToString(cs)
 	h := sha256.New()
 	h.Write([]byte(phead + "." + payload))
-	sig, err := rsa.SignPKCS1v15(rand.Reader, key, crypto.SHA256, h.Sum(nil))
+	sig, err := key.Sign(rand.Reader, h.Sum(nil), crypto.SHA256)
 	if err != nil {
 		return nil, err
 	}

@@ -17,6 +17,7 @@ package acme
 
 import (
 	"bytes"
+	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -25,6 +26,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -116,7 +118,8 @@ type AuthzID struct {
 // Client implements ACME spec.
 type Client struct {
 	http.Client
-	Key *rsa.PrivateKey
+	// Key.Public() must be *rsa.PublicKey
+	Key crypto.Signer
 }
 
 // CertSource creates new CertSource using client c.
@@ -268,6 +271,11 @@ func (c *Client) GetChallenge(url string) (*Challenge, error) {
 //
 // The server will then perform the validation asynchronously.
 func (c *Client) Accept(chal *Challenge) (*Challenge, error) {
+	pub, err := keyPub(c.Key)
+	if err != nil {
+		return nil, err
+	}
+
 	req := struct {
 		Resource string `json:"resource"`
 		Type     string `json:"type"`
@@ -275,7 +283,7 @@ func (c *Client) Accept(chal *Challenge) (*Challenge, error) {
 	}{
 		Resource: "challenge",
 		Type:     chal.Type,
-		Auth:     keyAuth(&c.Key.PublicKey, chal.Token),
+		Auth:     keyAuth(pub, chal.Token),
 	}
 	res, err := c.PostJWS(chal.URI, req)
 	if err != nil {
@@ -322,7 +330,7 @@ func (c *Client) HTTP01Handler(token string) http.Handler {
 			return
 		}
 		w.Header().Set("content-type", "text/plain")
-		w.Write([]byte(keyAuth(&c.Key.PublicKey, token)))
+		w.Write([]byte(keyAuth(c.Key.Public().(*rsa.PublicKey), token)))
 	})
 }
 
@@ -496,4 +504,13 @@ func retryAfter(v string) time.Duration {
 // keyAuth generates a key authorization string for a given token.
 func keyAuth(pub *rsa.PublicKey, token string) string {
 	return fmt.Sprintf("%s.%s", token, JWKThumbprint(pub))
+}
+
+func keyPub(key crypto.Signer) (*rsa.PublicKey, error) {
+	pubIface := key.Public()
+	pub, ok := pubIface.(*rsa.PublicKey)
+	if !ok {
+		return nil, &UnsupportedKeyError{Type: reflect.TypeOf(pubIface)}
+	}
+	return pub, nil
 }
