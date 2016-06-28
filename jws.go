@@ -26,7 +26,11 @@ import (
 // The result is serialized in JSON format.
 // See https://tools.ietf.org/html/rfc7515#section-7.
 func jwsEncodeJSON(claimset interface{}, key crypto.Signer, nonce string) ([]byte, error) {
-	jwk := jwkEncode(key.Public().(*rsa.PublicKey))
+	pub, err := keyPub(key)
+	if err != nil {
+		return nil, err
+	}
+	jwk := jwkEncode(pub)
 	phead := fmt.Sprintf(`{"alg":"RS256","jwk":%s,"nonce":%q}`, jwk, nonce)
 	phead = base64.RawURLEncoding.EncodeToString([]byte(phead))
 	cs, err := json.Marshal(claimset)
