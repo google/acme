@@ -48,7 +48,7 @@ Quick install with `go get -u github.com/google/acme/cmd/acme`.
   and look for "Accepted: ..." line. If it says "no", check CA's terms document
   provided as a link in "Terms: ..." field and agree by executing:
 
-        acme update -update
+        acme update -accept
 
 3. Request a new certificate for your domain.
 
