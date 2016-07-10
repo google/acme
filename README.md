@@ -20,17 +20,17 @@ Quick install with `go get -u github.com/google/acme/cmd/acme`.
 1. You need to have a user account, registered with the CA. This is represented
   by an RSA private key.
 
-  The easiest is to let `acme` tool generate it for you:
+  If you already have a key, you can just run:
 
         acme reg mailto:email@example.com
 
-  If you already have a key or want to generate one manually:
+  If you want to generate a key manually:
 
-        mkdir -p ~/config/acme
-        openssl genrsa -out ~/config/acme/account.pem 2048
+        mkdir -p ~/.config/acme
+        openssl genrsa -out ~/.config/acme/account.key 4096
         acme reg mailto:email@example.com
 
-  The latter version assumes that default `acme` config dir is `~/config/acme`.
+  The latter version assumes that default `acme` config dir is `~/.config/acme`.
   Yours may vary. Check with `acme help reg`.
 
   The "mailto:email@example.com" in the example above is a contact argument.
