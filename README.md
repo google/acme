@@ -20,9 +20,9 @@ Quick install with `go get -u github.com/google/acme/cmd/acme`.
 1. You need to have a user account, registered with the CA. This is represented
   by an RSA private key.
 
-  If you already have a key, you can just run:
+  The easiest is to let the `acme` tool generate it for you:
 
-        acme reg mailto:email@example.com
+        acme reg -gen mailto:email@example.com
 
   If you want to generate a key manually:
 
