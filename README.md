@@ -1,6 +1,6 @@
 # acme
 
-ACME-complient Go client library and a command line tool. Neither has 3rd party dependencies.
+ACME-compliant Go client library and a command line tool. Neither has 3rd party dependencies.
 Also, see https://letsencrypt.org.
 
 Contents of this repo:
