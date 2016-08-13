@@ -64,9 +64,11 @@ func runUpdate(args []string) {
 		uc.Contact = args
 	}
 
-	if err := client.UpdateReg(uc.URI, &uc.Account); err != nil {
+	a, err := client.UpdateReg(&uc.Account)
+	if err != nil {
 		fatalf(err.Error())
 	}
+	uc.Account = *a
 	if err := writeConfig(uc); err != nil {
 		fatalf("write config: %v", err)
 	}

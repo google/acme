@@ -12,7 +12,9 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
+	"strings"
 
 	"github.com/google/acme"
 )
@@ -20,7 +22,7 @@ import (
 var (
 	cmdReg = &command{
 		run:       runReg,
-		UsageLine: "reg [-c config] [-gen] [-d url] [contact [contact ...]]",
+		UsageLine: "reg [-c config] [-gen] [-accept] [-d url] [contact [contact ...]]",
 		Short:     "new account registration",
 		Long: `
 Reg creates a new account at a CA using the discovery URL
@@ -37,17 +39,23 @@ Contact arguments can be anything: email, phone number, etc.
 If -gen flag is not specified, and an account key does not exist, the command
 will exit with an error.
 
+The registration may require the user to agree to the CA Terms of Service (TOS).
+If so, and the -accept argument is not provided, the command prompts the user
+with a TOS URL provided by the CA.
+
 See also: acme help account.
 		`,
 	}
 
-	regDisco = defaultDiscoFlag
-	regGen   bool
+	regDisco  = defaultDiscoFlag
+	regGen    bool
+	regAccept bool
 )
 
 func init() {
 	cmdReg.flag.Var(&regDisco, "d", "")
 	cmdReg.flag.BoolVar(&regGen, "gen", regGen, "")
+	cmdReg.flag.BoolVar(&regAccept, "accept", regAccept, "")
 }
 
 func runReg(args []string) {
@@ -59,20 +67,32 @@ func runReg(args []string) {
 		Account: acme.Account{Contact: args},
 		key:     key,
 	}
-
-	// perform discovery to get the reg url
-	urls, err := acme.Discover(nil, string(regDisco))
-	if err != nil {
-		fatalf("discovery: %v", err)
+	prompt := ttyPrompt
+	if regAccept {
+		prompt = acme.AcceptTOS
 	}
-	// do the registration
-	client := acme.Client{Key: uc.key}
-	if err := client.Register(urls.RegURL, &uc.Account); err != nil {
+	client := &acme.Client{
+		Key:          uc.key,
+		DirectoryURL: string(regDisco),
+	}
+	a, err := client.Register(&uc.Account, prompt)
+	if err != nil {
 		fatalf("%v", err)
 	}
-	// success
-	// TODO: ask user for agreement acceptance
+	uc.Account = *a
 	if err := writeConfig(uc); err != nil {
 		errorf("write config: %v", err)
 	}
+}
+
+func ttyPrompt(tos string) bool {
+	fmt.Println("CA requires acceptance of their Terms and Services agreement:")
+	fmt.Println(tos)
+	fmt.Print("Do you accept? (Y/n) ")
+	var a string
+	if _, err := fmt.Scanln(&a); err != nil {
+		return false
+	}
+	a = strings.ToLower(a)
+	return strings.HasPrefix(a, "y")
 }

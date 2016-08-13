@@ -1,13 +1,6 @@
-// Copyright 2015 Google Inc. All Rights Reserved.
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//     http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2015 The Go Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style
+// license that can be found in the LICENSE file.
 
 package acme
 
@@ -18,12 +11,17 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/net/context"
 )
 
 // Decodes a JWS-encoded request and unmarshals the decoded JSON into a provided
@@ -61,21 +59,22 @@ func TestDiscover(t *testing.T) {
 		}`, reg, authz, cert, revoke)
 	}))
 	defer ts.Close()
-	ep, err := Discover(nil, ts.URL)
+	c := Client{DirectoryURL: ts.URL}
+	dir, err := c.Discover()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ep.RegURL != reg {
-		t.Errorf("RegURL = %q; want %q", ep.RegURL, reg)
+	if dir.RegURL != reg {
+		t.Errorf("dir.RegURL = %q; want %q", dir.RegURL, reg)
 	}
-	if ep.AuthzURL != authz {
-		t.Errorf("authzURL = %q; want %q", ep.AuthzURL, authz)
+	if dir.AuthzURL != authz {
+		t.Errorf("dir.AuthzURL = %q; want %q", dir.AuthzURL, authz)
 	}
-	if ep.CertURL != cert {
-		t.Errorf("certURL = %q; want %q", ep.CertURL, cert)
+	if dir.CertURL != cert {
+		t.Errorf("dir.CertURL = %q; want %q", dir.CertURL, cert)
 	}
-	if ep.RevokeURL != revoke {
-		t.Errorf("revokeURL = %q; want %q", ep.RevokeURL, revoke)
+	if dir.RevokeURL != revoke {
+		t.Errorf("dir.RevokeURL = %q; want %q", dir.RevokeURL, revoke)
 	}
 }
 
@@ -119,9 +118,18 @@ func TestRegister(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	c := Client{Key: testKey}
-	a := Account{Contact: contacts}
-	if err := c.Register(ts.URL, &a); err != nil {
+	prompt := func(url string) bool {
+		const terms = "https://ca.tld/acme/terms"
+		if url != terms {
+			t.Errorf("prompt url = %q; want %q", url, terms)
+		}
+		return false
+	}
+
+	c := Client{Key: testKey, dir: &Directory{RegURL: ts.URL}}
+	a := &Account{Contact: contacts}
+	var err error
+	if a, err = c.Register(a, prompt); err != nil {
 		t.Fatal(err)
 	}
 	if a.URI != "https://ca.tld/acme/reg/1" {
@@ -183,8 +191,9 @@ func TestUpdateReg(t *testing.T) {
 	defer ts.Close()
 
 	c := Client{Key: testKey}
-	a := Account{Contact: contacts, AgreedTerms: terms}
-	if err := c.UpdateReg(ts.URL, &a); err != nil {
+	a := &Account{URI: ts.URL, Contact: contacts, AgreedTerms: terms}
+	var err error
+	if a, err = c.UpdateReg(a); err != nil {
 		t.Fatal(err)
 	}
 	if a.Authz != "https://ca.tld/acme/new-authz" {
@@ -195,6 +204,9 @@ func TestUpdateReg(t *testing.T) {
 	}
 	if a.CurrentTerms != terms {
 		t.Errorf("a.CurrentTerms = %q; want %q", a.CurrentTerms, terms)
+	}
+	if a.URI != ts.URL {
+		t.Errorf("a.URI = %q; want %q", a.URI, ts.URL)
 	}
 }
 
@@ -257,6 +269,9 @@ func TestGetReg(t *testing.T) {
 	if a.CurrentTerms != newTerms {
 		t.Errorf("a.CurrentTerms = %q; want %q", a.CurrentTerms, newTerms)
 	}
+	if a.URI != ts.URL {
+		t.Errorf("a.URI = %q; want %q", a.URI, ts.URL)
+	}
 }
 
 func TestAuthorize(t *testing.T) {
@@ -271,7 +286,10 @@ func TestAuthorize(t *testing.T) {
 
 		var j struct {
 			Resource   string
-			Identifier AuthzID
+			Identifier struct {
+				Type  string
+				Value string
+			}
 		}
 		decodeJWSRequest(t, &j, r)
 
@@ -309,8 +327,8 @@ func TestAuthorize(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	cl := Client{Key: testKey}
-	auth, err := cl.Authorize(ts.URL, "example.com")
+	cl := Client{Key: testKey, dir: &Directory{AuthzURL: ts.URL}}
+	auth, err := cl.Authorize("example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,12 +346,11 @@ func TestAuthorize(t *testing.T) {
 		t.Errorf("Identifier.Value = %q; want example.com", auth.Identifier.Value)
 	}
 
-	set := auth.ChallengeSet
-	if n := len(set.Challenges); n != 2 {
-		t.Fatalf("len(set.Challenges) = %d; want 2", n)
+	if n := len(auth.Challenges); n != 2 {
+		t.Fatalf("len(auth.Challenges) = %d; want 2", n)
 	}
 
-	c := set.Challenges[0]
+	c := auth.Challenges[0]
 	if c.Type != "http-01" {
 		t.Errorf("c.Type = %q; want http-01", c.Type)
 	}
@@ -344,7 +361,7 @@ func TestAuthorize(t *testing.T) {
 		t.Errorf("c.Token = %q; want token1", c.Type)
 	}
 
-	c = set.Challenges[1]
+	c = auth.Challenges[1]
 	if c.Type != "tls-sni-01" {
 		t.Errorf("c.Type = %q; want tls-sni-01", c.Type)
 	}
@@ -355,9 +372,9 @@ func TestAuthorize(t *testing.T) {
 		t.Errorf("c.Token = %q; want token2", c.Type)
 	}
 
-	combs := [][]int{[]int{0}, []int{1}}
-	if !reflect.DeepEqual(set.Combinations, combs) {
-		t.Errorf("set.Combinations: %+v\nwant: %+v\n", set.Combinations, combs)
+	combs := [][]int{{0}, {1}}
+	if !reflect.DeepEqual(auth.Combinations, combs) {
+		t.Errorf("auth.Combinations: %+v\nwant: %+v\n", auth.Combinations, combs)
 	}
 }
 
@@ -405,12 +422,11 @@ func TestPollAuthz(t *testing.T) {
 		t.Errorf("Identifier.Value = %q; want example.com", auth.Identifier.Value)
 	}
 
-	set := auth.ChallengeSet
-	if n := len(set.Challenges); n != 2 {
+	if n := len(auth.Challenges); n != 2 {
 		t.Fatalf("len(set.Challenges) = %d; want 2", n)
 	}
 
-	c := set.Challenges[0]
+	c := auth.Challenges[0]
 	if c.Type != "http-01" {
 		t.Errorf("c.Type = %q; want http-01", c.Type)
 	}
@@ -421,7 +437,7 @@ func TestPollAuthz(t *testing.T) {
 		t.Errorf("c.Token = %q; want token1", c.Type)
 	}
 
-	c = set.Challenges[1]
+	c = auth.Challenges[1]
 	if c.Type != "tls-sni-01" {
 		t.Errorf("c.Type = %q; want tls-sni-01", c.Type)
 	}
@@ -432,9 +448,9 @@ func TestPollAuthz(t *testing.T) {
 		t.Errorf("c.Token = %q; want token2", c.Type)
 	}
 
-	combs := [][]int{[]int{0}, []int{1}}
-	if !reflect.DeepEqual(set.Combinations, combs) {
-		t.Errorf("set.Combinations: %+v\nwant: %+v\n", set.Combinations, combs)
+	combs := [][]int{{0}, {1}}
+	if !reflect.DeepEqual(auth.Combinations, combs) {
+		t.Errorf("auth.Combinations: %+v\nwant: %+v\n", auth.Combinations, combs)
 	}
 }
 
@@ -572,7 +588,7 @@ func TestNewCert(t *testing.T) {
 		template := x509.Certificate{
 			SerialNumber: big.NewInt(int64(1)),
 			Subject: pkix.Name{
-				Organization: []string{"acme"},
+				Organization: []string{"goacme"},
 			},
 			NotBefore: notBefore,
 			NotAfter:  notAfter,
@@ -597,7 +613,7 @@ func TestNewCert(t *testing.T) {
 		Version: 0,
 		Subject: pkix.Name{
 			CommonName:   "example.com",
-			Organization: []string{"acme"},
+			Organization: []string{"goacme"},
 		},
 	}
 	csrb, err := x509.CreateCertificateRequest(rand.Reader, &csr, testKey)
@@ -605,8 +621,8 @@ func TestNewCert(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	c := Client{Key: testKey}
-	cert, certURL, err := c.CreateCert(ts.URL, csrb, notAfter.Sub(notBefore), false)
+	c := Client{Key: testKey, dir: &Directory{CertURL: ts.URL}}
+	cert, certURL, err := c.CreateCert(context.Background(), csrb, notAfter.Sub(notBefore), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -615,6 +631,63 @@ func TestNewCert(t *testing.T) {
 	}
 	if certURL != "https://ca.tld/acme/cert/1" {
 		t.Errorf("certURL = %q; want https://ca.tld/acme/cert/1", certURL)
+	}
+}
+
+func TestFetchCert(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte{1})
+	}))
+	defer ts.Close()
+	res, err := (&Client{}).FetchCert(context.Background(), ts.URL, false)
+	if err != nil {
+		t.Fatalf("FetchCert: %v", err)
+	}
+	cert := [][]byte{{1}}
+	if !reflect.DeepEqual(res, cert) {
+		t.Errorf("res = %v; want %v", res, cert)
+	}
+}
+
+func TestFetchCertRetry(t *testing.T) {
+	var count int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if count < 1 {
+			w.Header().Set("retry-after", "0")
+			w.WriteHeader(http.StatusAccepted)
+			count++
+			return
+		}
+		w.Write([]byte{1})
+	}))
+	defer ts.Close()
+	res, err := (&Client{}).FetchCert(context.Background(), ts.URL, false)
+	if err != nil {
+		t.Fatalf("FetchCert: %v", err)
+	}
+	cert := [][]byte{{1}}
+	if !reflect.DeepEqual(res, cert) {
+		t.Errorf("res = %v; want %v", res, cert)
+	}
+}
+
+func TestFetchCertCancel(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("retry-after", "0")
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer ts.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	var err error
+	go func() {
+		_, err = (&Client{}).FetchCert(ctx, ts.URL, false)
+		close(done)
+	}()
+	cancel()
+	<-done
+	if err != context.Canceled {
+		t.Errorf("err = %v; want %v", err, context.Canceled)
 	}
 }
 
@@ -667,5 +740,96 @@ func TestLinkHeader(t *testing.T) {
 		if v := linkHeader(h, test.in); v != test.out {
 			t.Errorf("%d: parseLinkHeader(%q): %q; want %q", i, test.in, v, test.out)
 		}
+	}
+}
+
+func TestErrorResponse(t *testing.T) {
+	s := `{
+		"status": 400,
+		"type": "urn:acme:error:xxx",
+		"detail": "text"
+	}`
+	res := &http.Response{
+		StatusCode: 400,
+		Status:     "400 Bad Request",
+		Body:       ioutil.NopCloser(strings.NewReader(s)),
+		Header:     http.Header{"X-Foo": {"bar"}},
+	}
+	err := responseError(res)
+	v, ok := err.(*Error)
+	if !ok {
+		t.Fatalf("err = %+v (%T); want *Error type", err, err)
+	}
+	if v.StatusCode != 400 {
+		t.Errorf("v.StatusCode = %v; want 400", v.StatusCode)
+	}
+	if v.ProblemType != "urn:acme:error:xxx" {
+		t.Errorf("v.ProblemType = %q; want urn:acme:error:xxx", v.ProblemType)
+	}
+	if v.Detail != "text" {
+		t.Errorf("v.Detail = %q; want text", v.Detail)
+	}
+	if !reflect.DeepEqual(v.Header, res.Header) {
+		t.Errorf("v.Header = %+v; want %+v", v.Header, res.Header)
+	}
+}
+
+func TestTLSSNI01ChallengeCert(t *testing.T) {
+	const (
+		token = "evaGxfADs6pSRb2LAv9IZf17Dt3juxGJ-PCt92wr-oA"
+		// echo -n <token.testKeyThumbprint> | shasum -a 256
+		san = "b6ddc3df57802969e2e0b88eb548d4be.febc5bd6cf3690eb526081b5d10deda4.acme.invalid"
+	)
+
+	client := &Client{Key: testKey}
+	tlscert, name, err := client.TLSSNI01ChallengeCert(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(tlscert.Certificate); n != 1 {
+		t.Fatalf("len(tlscert.Certificate) = %d; want 1", n)
+	}
+	cert, err := x509.ParseCertificate(tlscert.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cert.DNSNames) != 1 || cert.DNSNames[0] != san {
+		t.Fatalf("cert.DNSNames = %v; want %q", cert.DNSNames, san)
+	}
+	if cert.DNSNames[0] != name {
+		t.Errorf("cert.DNSNames[0] != name: %q vs %q", cert.DNSNames[0], name)
+	}
+}
+func TestTLSSNI02ChallengeCert(t *testing.T) {
+	const (
+		token = "evaGxfADs6pSRb2LAv9IZf17Dt3juxGJ-PCt92wr-oA"
+		// echo -n evaGxfADs6pSRb2LAv9IZf17Dt3juxGJ-PCt92wr-oA | shasum -a 256
+		sanA = "7ea0aaa69214e71e02cebb18bb867736.09b730209baabf60e43d4999979ff139.token.acme.invalid"
+		// echo -n <token.testKeyThumbprint> | shasum -a 256
+		sanB = "b6ddc3df57802969e2e0b88eb548d4be.febc5bd6cf3690eb526081b5d10deda4.ka.acme.invalid"
+	)
+
+	client := &Client{Key: testKey}
+	tlscert, name, err := client.TLSSNI02ChallengeCert(token)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if n := len(tlscert.Certificate); n != 1 {
+		t.Fatalf("len(tlscert.Certificate) = %d; want 1", n)
+	}
+	cert, err := x509.ParseCertificate(tlscert.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := []string{sanA, sanB}
+	if !reflect.DeepEqual(cert.DNSNames, names) {
+		t.Fatalf("cert.DNSNames = %v;\nwant %v", cert.DNSNames, names)
+	}
+	sort.Strings(cert.DNSNames)
+	i := sort.SearchStrings(cert.DNSNames, name)
+	if i >= len(cert.DNSNames) || cert.DNSNames[i] != name {
+		t.Errorf("%v doesn't have %q", cert.DNSNames, name)
 	}
 }

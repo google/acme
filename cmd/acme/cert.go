@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"golang.org/x/net/context"
+
 	"github.com/google/acme"
 )
 
@@ -107,29 +109,27 @@ func runCert(args []string) {
 		fatalf("csr: %v", err)
 	}
 
-	// perform discovery to get the new-cert URL
-	disco, err := acme.Discover(nil, string(certDisco))
-	if err != nil {
-		fatalf("discovery: %v", err)
-	}
 	// initialize acme client and start authz flow
 	// we only look for http-01 challenges at the moment
-	client := &acme.Client{Key: uc.key}
+	client := &acme.Client{
+		Key:          uc.key,
+		DirectoryURL: string(certDisco),
+	}
 	for _, domain := range args {
-		if err := authz(client, uc.Authz, domain); err != nil {
+		if err := authz(client, domain); err != nil {
 			fatalf("%s: %v", domain, err)
 		}
 	}
 
 	// challenge fulfilled: get the cert
-	cert, curl, err := client.CreateCert(disco.CertURL, csr, certExpiry, certBundle)
+	// wait at most 30 min
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+	cert, curl, err := client.CreateCert(ctx, csr, certExpiry, certBundle)
 	if err != nil {
 		fatalf("cert: %v", err)
 	}
 	logf("cert url: %s", curl)
-	if cert == nil {
-		cert = pollCert(curl)
-	}
 	var pemcert []byte
 	for _, b := range cert {
 		b = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: b})
@@ -141,15 +141,15 @@ func runCert(args []string) {
 	}
 }
 
-func authz(client *acme.Client, zurl, domain string) error {
-	z, err := client.Authorize(zurl, domain)
+func authz(client *acme.Client, domain string) error {
+	z, err := client.Authorize(domain)
 	if err != nil {
 		return err
 	}
 	var chal *acme.Challenge
 	for _, c := range z.Challenges {
 		if c.Type == "http-01" {
-			chal = &c
+			chal = c
 			break
 		}
 	}
@@ -166,7 +166,11 @@ func authz(client *acme.Client, zurl, domain string) error {
 
 	if certManual {
 		// manual challenge response
-		tok := fmt.Sprintf("%s.%s", chal.Token, acme.JWKThumbprint(&client.Key.PublicKey))
+		thumb, err := acme.JWKThumbprint(client.Key.Public())
+		if err != nil {
+			return err
+		}
+		tok := fmt.Sprintf("%s.%s", chal.Token, thumb)
 		file, err := challengeFile(domain, tok)
 		if err != nil {
 			return err
@@ -199,20 +203,6 @@ func authz(client *acme.Client, zurl, domain string) error {
 		break
 	}
 	return nil
-}
-
-func pollCert(url string) [][]byte {
-	for {
-		b, err := acme.FetchCert(nil, url, certBundle)
-		if err == nil {
-			return b
-		}
-		d := 3 * time.Second
-		if re, ok := err.(acme.RetryError); ok {
-			d = time.Duration(re)
-		}
-		time.Sleep(d)
-	}
 }
 
 func challengeFile(domain, content string) (string, error) {
