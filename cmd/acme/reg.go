@@ -15,6 +15,9 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
+
+	"golang.org/x/net/context"
 
 	"github.com/google/acme"
 )
@@ -67,6 +70,7 @@ func runReg(args []string) {
 		Account: acme.Account{Contact: args},
 		key:     key,
 	}
+
 	prompt := ttyPrompt
 	if regAccept {
 		prompt = acme.AcceptTOS
@@ -75,7 +79,11 @@ func runReg(args []string) {
 		Key:          uc.key,
 		DirectoryURL: string(regDisco),
 	}
-	a, err := client.Register(&uc.Account, prompt)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	a, err := client.Register(ctx, &uc.Account, prompt)
 	if err != nil {
 		fatalf("%v", err)
 	}

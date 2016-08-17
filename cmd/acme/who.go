@@ -14,6 +14,9 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"time"
+
+	"golang.org/x/net/context"
 
 	"github.com/google/acme"
 )
@@ -43,8 +46,11 @@ func runWhoami([]string) {
 		fatalf("no key found for %s", uc.URI)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	client := acme.Client{Key: uc.key}
-	a, err := client.GetReg(uc.URI)
+	a, err := client.GetReg(ctx, uc.URI)
 	if err != nil {
 		fatalf(err.Error())
 	}

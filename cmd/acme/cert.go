@@ -116,9 +116,11 @@ func runCert(args []string) {
 		DirectoryURL: string(certDisco),
 	}
 	for _, domain := range args {
-		if err := authz(client, domain); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		if err := authz(ctx, client, domain); err != nil {
 			fatalf("%s: %v", domain, err)
 		}
+		cancel()
 	}
 
 	// challenge fulfilled: get the cert
@@ -141,8 +143,8 @@ func runCert(args []string) {
 	}
 }
 
-func authz(client *acme.Client, domain string) error {
-	z, err := client.Authorize(domain)
+func authz(ctx context.Context, client *acme.Client, domain string) error {
+	z, err := client.Authorize(ctx, domain)
 	if err != nil {
 		return err
 	}
@@ -184,11 +186,11 @@ func authz(client *acme.Client, domain string) error {
 		go http.Serve(ln, client.HTTP01Handler(chal.Token))
 	}
 
-	if _, err := client.Accept(chal); err != nil {
+	if _, err := client.Accept(ctx, chal); err != nil {
 		return fmt.Errorf("accept challenge: %v", err)
 	}
 	for {
-		a, err := client.GetAuthz(z.URI)
+		a, err := client.GetAuthz(ctx, z.URI)
 		if err != nil {
 			logf("authz %q: %v\n", z.URI, err)
 		}
