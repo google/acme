@@ -148,6 +148,9 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 	if err != nil {
 		return err
 	}
+	if z.Status == acme.StatusValid {
+		return nil
+	}
 	var chal *acme.Challenge
 	for _, c := range z.Challenges {
 		if c.Type == "http-01" {
