@@ -330,7 +330,7 @@ func (c *Client) Authorize(ctx context.Context, domain string) (*Authorization, 
 	if err := json.NewDecoder(res.Body).Decode(&v); err != nil {
 		return nil, fmt.Errorf("acme: invalid response: %v", err)
 	}
-	if v.Status != StatusPending {
+	if v.Status != StatusPending && v.Status != StatusValid {
 		return nil, fmt.Errorf("acme: unexpected status: %s", v.Status)
 	}
 	return v.authorization(res.Header.Get("Location")), nil
