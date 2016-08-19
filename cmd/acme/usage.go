@@ -37,7 +37,7 @@ Use "acme help [topic]" for more information about that topic.
 		Long: `
 The program keeps all configuration, including issued certificates and
 the corresponding keys, in a single directory which is tied to a specific account
-identified by a private RSA key.
+identified by a private key.
 
 The account metadata are stored in {{.AccountFile}} file, while the account
 private key is kept in {{.AccountKey}} file.

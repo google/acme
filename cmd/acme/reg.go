@@ -39,8 +39,11 @@ If the config dir does not exist, it will be created.
 
 Contact arguments can be anything: email, phone number, etc.
 
-If -gen flag is not specified, and an account key does not exist, the command
-will exit with an error.
+The -gen flag will generate an ECDSA P-256 keypair to use as the account key.
+
+If -gen flag is not specified, and a file named account.key containing
+a PEM-encoded ECDSA or RSA private key does not exist, the command will exit
+with an error.
 
 The registration may require the user to agree to the CA Terms of Service (TOS).
 If so, and the -accept argument is not provided, the command prompts the user

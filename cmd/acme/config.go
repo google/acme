@@ -12,8 +12,10 @@
 package main
 
 import (
+	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -35,8 +37,8 @@ const (
 	// accountKey is the default user account private key file.
 	accountKey = "account.key"
 
-	// rsaPrivateKey is a type of RSA key.
 	rsaPrivateKey = "RSA PRIVATE KEY"
+	ecPrivateKey  = "EC PRIVATE KEY"
 )
 
 // configDir is acme configuration dir.
@@ -62,7 +64,7 @@ type userConfig struct {
 	CA string `json:"ca"` // CA discovery URL
 
 	// key is stored separately
-	key *rsa.PrivateKey
+	key crypto.Signer
 }
 
 // readConfig reads userConfig from path and a private key.
@@ -101,7 +103,7 @@ func writeConfig(uc *userConfig) error {
 
 // readKey reads a private rsa key from path.
 // The key is expected to be in PEM format.
-func readKey(path string) (*rsa.PrivateKey, error) {
+func readKey(path string) (crypto.Signer, error) {
 	b, err := ioutil.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -110,20 +112,28 @@ func readKey(path string) (*rsa.PrivateKey, error) {
 	if d == nil {
 		return nil, fmt.Errorf("no block found in %q", path)
 	}
-	if d.Type != rsaPrivateKey {
+	switch d.Type {
+	case rsaPrivateKey:
+		return x509.ParsePKCS1PrivateKey(d.Bytes)
+	case ecPrivateKey:
+		return x509.ParseECPrivateKey(d.Bytes)
+	default:
 		return nil, fmt.Errorf("%q is unsupported", d.Type)
 	}
-	return x509.ParsePKCS1PrivateKey(d.Bytes)
 }
 
 // writeKey writes k to the specified path in PEM format.
 // If file does not exists, it will be created with 0600 mod.
-func writeKey(path string, k *rsa.PrivateKey) error {
+func writeKey(path string, k *ecdsa.PrivateKey) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
-	b := &pem.Block{Type: rsaPrivateKey, Bytes: x509.MarshalPKCS1PrivateKey(k)}
+	bytes, err := x509.MarshalECPrivateKey(k)
+	if err != nil {
+		return err
+	}
+	b := &pem.Block{Type: ecPrivateKey, Bytes: bytes}
 	if err := pem.Encode(f, b); err != nil {
 		f.Close()
 		return err
@@ -134,7 +144,7 @@ func writeKey(path string, k *rsa.PrivateKey) error {
 // anyKey reads the key from file or generates a new one if gen == true.
 // It returns an error if filename exists but cannot be read.
 // A newly generated key is also stored to filename.
-func anyKey(filename string, gen bool) (*rsa.PrivateKey, error) {
+func anyKey(filename string, gen bool) (crypto.Signer, error) {
 	k, err := readKey(filename)
 	if err == nil {
 		return k, nil
@@ -142,11 +152,11 @@ func anyKey(filename string, gen bool) (*rsa.PrivateKey, error) {
 	if !os.IsNotExist(err) || !gen {
 		return nil, err
 	}
-	k, err = rsa.GenerateKey(rand.Reader, 2048)
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}
-	return k, writeKey(filename, k)
+	return ecKey, writeKey(filename, ecKey)
 }
 
 // sameDir returns filename path placing it in the same dir as existing file.
