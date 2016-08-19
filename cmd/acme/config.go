@@ -13,8 +13,9 @@ package main
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/json"
 	"encoding/pem"
@@ -123,12 +124,16 @@ func readKey(path string) (crypto.Signer, error) {
 
 // writeKey writes k to the specified path in PEM format.
 // If file does not exists, it will be created with 0600 mod.
-func writeKey(path string, k *rsa.PrivateKey) error {
+func writeKey(path string, k *ecdsa.PrivateKey) error {
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
 	}
-	b := &pem.Block{Type: rsaPrivateKey, Bytes: x509.MarshalPKCS1PrivateKey(k)}
+	bytes, err := x509.MarshalECPrivateKey(k)
+	if err != nil {
+		return err
+	}
+	b := &pem.Block{Type: ecPrivateKey, Bytes: bytes}
 	if err := pem.Encode(f, b); err != nil {
 		f.Close()
 		return err
@@ -147,11 +152,11 @@ func anyKey(filename string, gen bool) (crypto.Signer, error) {
 	if !os.IsNotExist(err) || !gen {
 		return nil, err
 	}
-	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}
-	return rsaKey, writeKey(filename, rsaKey)
+	return ecKey, writeKey(filename, ecKey)
 }
 
 // sameDir returns filename path placing it in the same dir as existing file.
