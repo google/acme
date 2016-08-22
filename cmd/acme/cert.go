@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -186,28 +187,20 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 		fmt.Scanln(&x)
 	} else {
 		// auto, via local server
-		go http.Serve(ln, client.HTTP01Handler(chal.Token))
+		val, err := client.HTTP01ChallengeResponse(chal.Token)
+		if err != nil {
+			return err
+		}
+		path := client.HTTP01ChallengePath(chal.Token)
+		go http.Serve(ln, http01Handler(path, val))
+
 	}
 
 	if _, err := client.Accept(ctx, chal); err != nil {
 		return fmt.Errorf("accept challenge: %v", err)
 	}
-	for {
-		a, err := client.GetAuthz(ctx, z.URI)
-		if err != nil {
-			logf("authz %q: %v\n", z.URI, err)
-		}
-		if a.Status == acme.StatusInvalid {
-			return fmt.Errorf("could not authorize for %s", domain)
-		}
-		if a.Status != acme.StatusValid {
-			// TODO: use Retry-After
-			time.Sleep(time.Duration(3) * time.Second)
-			continue
-		}
-		break
-	}
-	return nil
+	_, err = client.WaitAuthorization(ctx, z.URI)
+	return err
 }
 
 func challengeFile(domain, content string) (string, error) {
@@ -220,4 +213,15 @@ func challengeFile(domain, content string) (string, error) {
 		err = err1
 	}
 	return f.Name(), err
+}
+
+func http01Handler(path, value string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != path {
+			log.Printf("unknown request path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.Write([]byte(value))
+	})
 }
