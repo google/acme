@@ -97,10 +97,10 @@ func runCert(args []string) {
 	certPath := sameDir(certKeypath, cn+".crt")
 	certCrt, err := readCrt(certPath)
 	if err == nil {
-		// do not re-issue certificate if it's not about to expire in less than one week
+		// do not re-issue certificate if it's not about to expire in less than three weeks
 		expiresIn := certCrt.NotAfter.Sub(time.Now())
-		if expiresIn > 24*7*time.Hour {
-			errorf("cert is still valid for more than one week, not renewing")
+		if expiresIn > 24*7*3*time.Hour {
+			errorf("cert is still valid for more than a three weeks, not renewing")
 			exit()
 		}
 	}
