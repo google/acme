@@ -172,17 +172,16 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 
 	if certManual {
 		// manual challenge response
-		thumb, err := acme.JWKThumbprint(client.Key.Public())
+		tok, err := client.HTTP01ChallengeResponse(chal.Token)
 		if err != nil {
 			return err
 		}
-		tok := fmt.Sprintf("%s.%s", chal.Token, thumb)
 		file, err := challengeFile(domain, tok)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Copy %s to ROOT/.well-known/acme-challenge/%s of %s and press enter.\n",
-			file, chal.Token, domain)
+		fmt.Printf("Copy %s to http://%s%s and press enter.\n",
+			file, domain, client.HTTP01ChallengePath(chal.Token))
 		var x string
 		fmt.Scanln(&x)
 	} else {
