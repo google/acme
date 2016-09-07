@@ -33,11 +33,11 @@ import (
 var (
 	cmdCert = &command{
 		run:       runCert,
-		UsageLine: "cert [-c config] [-d url] [-s host:port] [-k key] [-expiry dur] [-bundle=true] [-manual=false] domain [domain ...]",
+		UsageLine: "cert [-c config] [-d url] [-s host:port] [-k key] [-expiry dur] [-bundle=true] [-manual=false] [-dns=false] domain [domain ...]",
 		Short:     "request a new certificate",
 		Long: `
 Cert creates a new certificate for the given domain.
-It uses http-01 challenge to complete authorization flow.
+It uses the http-01 challenge type by default and dns-01 if -dns is specified.
 
 The certificate will be placed alongside key file, specified with -k argument.
 If the key file does not exist, a new one will be created.
@@ -50,7 +50,7 @@ If this is undesired, specify -bundle=false argument.
 The -s argument specifies the address where to run local server
 for the http-01 challenge. If not specified, 127.0.0.1:8080 will be used.
 
-An alternative to local server challenge response may be specified as -manual,
+An alternative to local server challenge response may be specified with -manual or -dns,
 in which case instructions are displayed on the standard output.
 
 Default location of the config dir is
@@ -63,6 +63,7 @@ Default location of the config dir is
 	certExpiry  = 365 * 12 * time.Hour
 	certBundle  = true
 	certManual  = false
+	certDNS     = false
 	certKeypath string
 )
 
@@ -72,12 +73,16 @@ func init() {
 	cmdCert.flag.DurationVar(&certExpiry, "expiry", certExpiry, "")
 	cmdCert.flag.BoolVar(&certBundle, "bundle", certBundle, "")
 	cmdCert.flag.BoolVar(&certManual, "manual", certManual, "")
+	cmdCert.flag.BoolVar(&certDNS, "dns", certDNS, "")
 	cmdCert.flag.StringVar(&certKeypath, "k", "", "")
 }
 
 func runCert(args []string) {
 	if len(args) == 0 {
 		fatalf("no domain specified")
+	}
+	if certManual && certDNS {
+		fatalf("-dns and -manual are mutually exclusive, only one should be specified")
 	}
 	cn := args[0]
 	if certKeypath == "" {
@@ -154,7 +159,7 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 	}
 	var chal *acme.Challenge
 	for _, c := range z.Challenges {
-		if c.Type == "http-01" {
+		if (c.Type == "http-01" && !certDNS) || (c.Type == "dns-01" && certDNS) {
 			chal = c
 			break
 		}
@@ -170,22 +175,31 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 	}
 	defer ln.Close()
 
-	if certManual {
+	switch {
+	case certManual:
 		// manual challenge response
-		thumb, err := acme.JWKThumbprint(client.Key.Public())
+		tok, err := client.HTTP01ChallengeResponse(chal.Token)
 		if err != nil {
 			return err
 		}
-		tok := fmt.Sprintf("%s.%s", chal.Token, thumb)
 		file, err := challengeFile(domain, tok)
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Copy %s to ROOT/.well-known/acme-challenge/%s of %s and press enter.\n",
-			file, chal.Token, domain)
+		fmt.Printf("Copy %s to http://%s%s and press enter.\n",
+			file, domain, client.HTTP01ChallengePath(chal.Token))
 		var x string
 		fmt.Scanln(&x)
-	} else {
+	case certDNS:
+		val, err := client.DNS01ChallengeRecord(chal.Token)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Add a TXT record for _acme-challenge.%s with the value %q and press enter after it has propagated.\n",
+			domain, val)
+		var x string
+		fmt.Scanln(&x)
+	default:
 		// auto, via local server
 		val, err := client.HTTP01ChallengeResponse(chal.Token)
 		if err != nil {
