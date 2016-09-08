@@ -39,6 +39,7 @@ const (
 
 	rsaPrivateKey = "RSA PRIVATE KEY"
 	ecPrivateKey  = "EC PRIVATE KEY"
+	x509PublicKey = "CERTIFICATE"
 )
 
 // configDir is acme configuration dir.
@@ -120,6 +121,21 @@ func readKey(path string) (crypto.Signer, error) {
 	default:
 		return nil, fmt.Errorf("%q is unsupported", d.Type)
 	}
+}
+
+func readCrt(path string) (*x509.Certificate, error) {
+	b, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	d, _ := pem.Decode(b)
+	if d == nil {
+		return nil, fmt.Errorf("no block found in %q", path)
+	}
+	if d.Type != x509PublicKey {
+		return nil, fmt.Errorf("%q is unsupported", d.Type)
+	}
+	return x509.ParseCertificate(d.Bytes)
 }
 
 // writeKey writes k to the specified path in PEM format.
