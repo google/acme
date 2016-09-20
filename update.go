@@ -12,12 +12,12 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"time"
 
 	"golang.org/x/crypto/acme"
-	"golang.org/x/net/context"
 )
 
 var (

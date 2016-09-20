@@ -1,7 +1,7 @@
 clone:
   depth: 1
 build:
-  image: golang
+  image: golang:1.7
   commands:
     - go get ./...
     - go test ./...
