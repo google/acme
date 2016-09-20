@@ -16,7 +16,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/acme"
+	"golang.org/x/crypto/acme"
 )
 
 func TestConfigReadWrite(t *testing.T) {

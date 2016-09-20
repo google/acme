@@ -6,6 +6,10 @@
 // Automatic Certificate Management Environment (ACME) spec.
 // See https://tools.ietf.org/html/draft-ietf-acme-acme-02 for details.
 //
+// Most common scenarios will want to use autocert subdirectory instead,
+// which provides automatic access to certificates from Let's Encrypt
+// and any other ACME-based CA.
+//
 // This package is a work in progress and makes no API stability promises.
 package acme
 
@@ -61,7 +65,21 @@ type certOptKey struct {
 	key crypto.Signer
 }
 
-func (co *certOptKey) privateCertOpt() {}
+func (*certOptKey) privateCertOpt() {}
+
+// WithTemplate creates an option for specifying a certificate template.
+// See x509.CreateCertificate for template usage details.
+//
+// In TLSSNIxChallengeCert methods, the template is also used as parent,
+// resulting in a self-signed certificate.
+// The DNSNames field of t is always overwritten for tls-sni challenge certs.
+func WithTemplate(t *x509.Certificate) CertOption {
+	return (*certOptTemplate)(t)
+}
+
+type certOptTemplate x509.Certificate
+
+func (*certOptTemplate) privateCertOpt() {}
 
 // Client is an ACME client.
 // The only required field is Key. An example of creating a client with a new key
@@ -374,6 +392,34 @@ func (c *Client) GetAuthorization(ctx context.Context, url string) (*Authorizati
 		return nil, fmt.Errorf("acme: invalid response: %v", err)
 	}
 	return v.authorization(url), nil
+}
+
+// RevokeAuthorization relinquishes an existing authorization identified
+// by the given URL.
+// The url argument is an Authorization.URI value.
+//
+// If successful, the caller will be required to obtain a new authorization
+// using the Authorize method before being able to request a new certificate
+// for the domain associated with the authorization.
+//
+// It does not revoke existing certificates.
+func (c *Client) RevokeAuthorization(ctx context.Context, url string) error {
+	req := struct {
+		Resource string `json:"resource"`
+		Delete   bool   `json:"delete"`
+	}{
+		Resource: "authz",
+		Delete:   true,
+	}
+	res, err := postJWS(ctx, c.HTTPClient, c.Key, url, req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return responseError(res)
+	}
+	return nil
 }
 
 // WaitAuthorization polls an authorization at the given URL
@@ -842,7 +888,10 @@ func keyAuth(pub crypto.PublicKey, token string) (string, error) {
 // with the given SANs and auto-generated public/private key pair.
 // To create a cert with a custom key pair, specify WithKey option.
 func tlsChallengeCert(san []string, opt []CertOption) (tls.Certificate, error) {
-	var key crypto.Signer
+	var (
+		key  crypto.Signer
+		tmpl *x509.Certificate
+	)
 	for _, o := range opt {
 		switch o := o.(type) {
 		case *certOptKey:
@@ -850,6 +899,9 @@ func tlsChallengeCert(san []string, opt []CertOption) (tls.Certificate, error) {
 				return tls.Certificate{}, errors.New("acme: duplicate key option")
 			}
 			key = o.key
+		case *certOptTemplate:
+			var t = *(*x509.Certificate)(o) // shallow copy is ok
+			tmpl = &t
 		default:
 			// package's fault, if we let this happen:
 			panic(fmt.Sprintf("unsupported option type %T", o))
@@ -861,15 +913,18 @@ func tlsChallengeCert(san []string, opt []CertOption) (tls.Certificate, error) {
 			return tls.Certificate{}, err
 		}
 	}
-	t := x509.Certificate{
-		SerialNumber:          big.NewInt(1),
-		NotBefore:             time.Now(),
-		NotAfter:              time.Now().Add(24 * time.Hour),
-		BasicConstraintsValid: true,
-		KeyUsage:              x509.KeyUsageKeyEncipherment,
-		DNSNames:              san,
+	if tmpl == nil {
+		tmpl = &x509.Certificate{
+			SerialNumber:          big.NewInt(1),
+			NotBefore:             time.Now(),
+			NotAfter:              time.Now().Add(24 * time.Hour),
+			BasicConstraintsValid: true,
+			KeyUsage:              x509.KeyUsageKeyEncipherment,
+		}
 	}
-	der, err := x509.CreateCertificate(rand.Reader, &t, &t, key.Public(), key)
+	tmpl.DNSNames = san
+
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
 	if err != nil {
 		return tls.Certificate{}, err
 	}

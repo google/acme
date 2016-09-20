@@ -17,9 +17,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/crypto/acme"
 	"golang.org/x/net/context"
-
-	"github.com/google/acme"
 )
 
 var (

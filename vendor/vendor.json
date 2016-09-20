@@ -1,0 +1,13 @@
+{
+	"comment": "",
+	"ignore": "",
+	"package": [
+		{
+			"checksumSHA1": "Z+5Zyn58FeBHRkwQWC2SotL9cUo=",
+			"path": "golang.org/x/crypto/acme",
+			"revision": "97c09c959785e78cf1218e4abc17845d0f0948e6",
+			"revisionTime": "2016-09-12T10:18:32Z"
+		}
+	],
+	"rootPath": "github.com/google/acme"
+}

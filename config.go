@@ -28,7 +28,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/google/acme"
+	"golang.org/x/crypto/acme"
 )
 
 const (
