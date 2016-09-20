@@ -10,7 +10,12 @@ or `golang.org/x/crypto/acme/autocert` is what you'll want instead.
 
 ## Usage
 
-Quick install with `go get -u github.com/google/acme`.
+Quick install with `go get -u github.com/google/acme`
+or download a pre-built binary from the
+[releases page](https://github.com/google/acme/releases).
+
+The release binaries have an additional command, `acme version`,
+which reports the release version.
 
 1. You need to have a user account, registered with the CA. This is represented
   by an RSA private key.
