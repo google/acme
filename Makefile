@@ -17,7 +17,8 @@ RELEASES=bin/acme-darwin-amd64 \
 	 bin/acme-linux-386 \
 	 bin/acme-linux-arm \
 	 bin/acme-windows-amd64.exe \
-	 bin/acme-windows-386.exe
+	 bin/acme-windows-386.exe \
+	 bin/acme-solaris-amd64 
 
 all: $(RELEASES)
 
