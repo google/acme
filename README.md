@@ -57,7 +57,7 @@ which reports the release version.
         acme cert example.com
 
   The above command will generate a new certificate key (unless one already exists),
-  and send a certifcate request. The location of the output files is `~/.config.acme`,
+  and send a certifcate request. The location of the output files is `~/.config/acme`,
   but depends on your environment. Check with `acme help cert`.
 
   If you don't want auto-generated cert key, one can always be generated upfront:
