@@ -1,7 +1,7 @@
 # acme
 
 A simple command line tool to manage TLS certificates with ACME-compliant CAs,
-which has no third party depedencies.
+which has no third party dependencies.
 
 If you're looking for a package to import in your program, `golang.org/x/crypto/acme`
 or `golang.org/x/crypto/acme/autocert` is what you'll want instead.
@@ -40,12 +40,12 @@ which reports the release version.
 
 2. Agree with the ACME CA Terms of Service.
 
-  Before requesting your first certificate, you may need to agree with
-  the terms of the CA. You can check the status of our account with:
+  Before requesting your first certificate, you may need to accept
+  the terms of the CA. You can check the status of your account with:
 
         acme whoami
 
-  and look for "Accepted: ..." line. If it says "no", check CA's terms document
+  and look for the "Accepted: ..." line. If it says "no", check the CA's terms document
   provided as a link in "Terms: ..." field and agree by executing:
 
         acme update -accept
@@ -57,10 +57,10 @@ which reports the release version.
         acme cert example.com
 
   The above command will generate a new certificate key (unless one already exists),
-  and send a certifcate request. The location of the output files is `~/.config/acme`,
-  but depends on your environment. Check with `acme help cert`.
+  and send a certificate request. The location of the output files is `~/.config/acme`,
+  but depends on your environment. You can check this location with `acme help cert`.
 
-  If you don't want auto-generated cert key, one can always be generated upfront:
+  If you don't want to auto-generate a cert key, one can always be generated upfront:
 
         openssl genrsa -out cert.key 2048
 
@@ -68,11 +68,11 @@ which reports the release version.
 
         acme cert -k cert.key example.com
 
-  Note that for certificate request command to succeed, it needs to be executed in a way
+  Note that for the certificate request command to succeed, it needs to be executed in a way
   allowing for resolving authorization challenges (domain ownership proof). This typically
   means the command should be executed on the same host the domain is served from.
 
-  If the latter is not possible, use `-manual` flag and follow the instructions:
+  If the latter is not possible, use the `-manual` flag and follow the instructions:
 
         acme cert -manual example.com
 
