@@ -123,8 +123,12 @@ func readKey(path string) (crypto.Signer, error) {
 }
 
 // writeKey writes k to the specified path in PEM format.
-// If file does not exists, it will be created with 0600 mod.
+// If directory of path does not exist, it will be created with 0700 mod.
+// If path does not exists, it will be created with 0600 mod.
 func writeKey(path string, k *ecdsa.PrivateKey) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
