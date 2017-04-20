@@ -70,6 +70,7 @@ func runReg(args []string) {
 	}
 	uc := &userConfig{
 		Account: acme.Account{Contact: args},
+		CA:      string(regDisco),
 		key:     key,
 	}
 
@@ -79,7 +80,7 @@ func runReg(args []string) {
 	}
 	client := &acme.Client{
 		Key:          uc.key,
-		DirectoryURL: string(regDisco),
+		DirectoryURL: uc.CA,
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

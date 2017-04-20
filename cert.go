@@ -57,7 +57,7 @@ Default location of the config dir is
 		`,
 	}
 
-	certDisco   = defaultDiscoFlag
+	certDisco   discoAliasFlag
 	certAddr    = "127.0.0.1:8080"
 	certExpiry  = 365 * 12 * time.Hour
 	certBundle  = true
@@ -97,6 +97,13 @@ func runCert(args []string) {
 		fatalf("no key found for %s", uc.URI)
 	}
 
+	useDisco := uc.CA
+	if string(certDisco) != "" {
+		useDisco = string(certDisco)
+	} else if useDisco == "" {
+		useDisco = string(defaultDiscoFlag)
+	}
+
 	// read or generate new cert key
 	certKey, err := anyKey(certKeypath, true)
 	if err != nil {
@@ -118,7 +125,7 @@ func runCert(args []string) {
 	// we only look for http-01 challenges at the moment
 	client := &acme.Client{
 		Key:          uc.key,
-		DirectoryURL: string(certDisco),
+		DirectoryURL: useDisco,
 	}
 	for _, domain := range args {
 		ctx, cancel := context.Background(), func() {}
