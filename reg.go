@@ -13,6 +13,7 @@ package main
 
 import (
 	"context"
+	"os"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -87,7 +88,12 @@ func runReg(args []string) {
 
 	a, err := client.Register(ctx, &uc.Account, prompt)
 	if err != nil {
-		fatalf("%v", err)
+		switch err.Error() {
+		case "409 urn:acme:error:malformed: Registration key is already in use":
+			fatalf("Key already registered - see '%s whoami -c %s'.\nMaybe you just need to accept an updated license?\nThen you can use '%s update -c %s -accept'", os.Args[0], configDir, os.Args[0], configDir)
+		default:
+			fatalf("%v", err)
+		}
 	}
 	uc.Account = *a
 	if err := writeConfig(uc); err != nil {
