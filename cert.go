@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"time"
+	"os"
 
 	"golang.org/x/crypto/acme"
 )
@@ -64,6 +65,8 @@ Default location of the config dir is
 	certManual  = false
 	certDNS     = false
 	certKeypath string
+	certWebroot string
+	certWebrootMode = 0600
 )
 
 func init() {
@@ -74,6 +77,8 @@ func init() {
 	cmdCert.flag.BoolVar(&certManual, "manual", certManual, "")
 	cmdCert.flag.BoolVar(&certDNS, "dns", certDNS, "")
 	cmdCert.flag.StringVar(&certKeypath, "k", "", "")
+	cmdCert.flag.StringVar(&certWebroot, "webroot", "", "write http-01 mode challenge to that webroot directory")
+	cmdCert.flag.IntVar(&certWebrootMode, "webroot-mode", certWebrootMode, "file mode for challenge file created in -webroot")
 }
 
 func runCert(args []string) {
@@ -82,6 +87,12 @@ func runCert(args []string) {
 	}
 	if certManual && certDNS {
 		fatalf("-dns and -manual are mutually exclusive, only one should be specified")
+	}
+	if certWebroot != "" && certDNS {
+		fatalf("-webroot and -dns are mutually exclusive, only one should be specified")
+	}
+	if certWebroot != "" && certManual {
+		fatalf("-webroot and -manual are mutually exclusive, only one should be specified")
 	}
 	cn := args[0]
 	if certKeypath == "" {
@@ -178,13 +189,25 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 	defer ln.Close()
 
 	switch {
+	case certWebroot != "":
+		// directly copy to given webroot
+		tok, err := client.HTTP01ChallengeResponse(chal.Token)
+		if err != nil {
+			return err
+		}
+		path, err := challengeCreateWebrootFile(
+				client.HTTP01ChallengePath(chal.Token), tok)
+		if err != nil {
+			return err
+		}
+		defer os.Remove(path)
 	case certManual:
 		// manual challenge response
 		tok, err := client.HTTP01ChallengeResponse(chal.Token)
 		if err != nil {
 			return err
 		}
-		file, err := challengeFile(domain, tok)
+		file, err := challengeCreateTmpFile(domain, tok)
 		if err != nil {
 			return err
 		}
@@ -219,7 +242,7 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 	return err
 }
 
-func challengeFile(domain, content string) (string, error) {
+func challengeCreateTmpFile(domain, content string) (string, error) {
 	f, err := ioutil.TempFile("", domain)
 	if err != nil {
 		return "", err
@@ -229,6 +252,22 @@ func challengeFile(domain, content string) (string, error) {
 		err = err1
 	}
 	return f.Name(), err
+}
+
+func challengeCreateWebrootFile(filename, content string) (string, error) {
+	path := filepath.Join(certWebroot, filename)
+	f, err := os.OpenFile(
+		path,
+		os.O_WRONLY|os.O_CREATE|os.O_TRUNC|os.O_EXCL,
+		os.FileMode(certWebrootMode))
+	if err != nil {
+		return "", err
+	}
+	_, err = fmt.Fprint(f, content)
+	if err1 := f.Close(); err1 != nil && err == nil {
+		err = err1
+	}
+	return path, err
 }
 
 func http01Handler(path, value string) http.Handler {
