@@ -121,7 +121,10 @@ func runCert(args []string) {
 		DirectoryURL: string(certDisco),
 	}
 	for _, domain := range args {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		ctx, cancel := context.Background(), func() {}
+		if !certManual && !certDNS {
+			ctx, cancel = context.WithTimeout(context.Background(), 10*time.Minute)
+		}
 		if err := authz(ctx, client, domain); err != nil {
 			fatalf("%s: %v", domain, err)
 		}
