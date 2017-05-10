@@ -170,13 +170,6 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 		return errors.New("no supported challenge found")
 	}
 
-	// respond to http-01 challenge
-	ln, err := net.Listen("tcp", certAddr)
-	if err != nil {
-		return fmt.Errorf("listen %s: %v", certAddr, err)
-	}
-	defer ln.Close()
-
 	switch {
 	case certManual:
 		// manual challenge response
@@ -203,6 +196,13 @@ func authz(ctx context.Context, client *acme.Client, domain string) error {
 		fmt.Scanln(&x)
 	default:
 		// auto, via local server
+		// respond to http-01 challenge
+		ln, err := net.Listen("tcp", certAddr)
+		if err != nil {
+			return fmt.Errorf("listen %s: %v", certAddr, err)
+		}
+		defer ln.Close()
+
 		val, err := client.HTTP01ChallengeResponse(chal.Token)
 		if err != nil {
 			return err
