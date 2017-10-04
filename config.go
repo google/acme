@@ -86,7 +86,11 @@ func readConfig() (*userConfig, error) {
 	return uc, nil
 }
 
-// writeConfig writes uc to a file specified by path, creating paret dirs
+func mkConfigDirs() error {
+	return os.MkdirAll(configDir, 0700)
+}
+
+// writeConfig writes uc to a file specified by path, creating parent dirs
 // along the way. If file does not exists, it will be created with 0600 mod.
 // This function does not store uc.key.
 //func writeConfig(path string, uc *userConfig) error {
@@ -95,7 +99,7 @@ func writeConfig(uc *userConfig) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(configDir, 0700); err != nil {
+	if err := mkConfigDirs(); err != nil {
 		return err
 	}
 	return ioutil.WriteFile(filepath.Join(configDir, accountFile), b, 0600)
@@ -124,7 +128,11 @@ func readKey(path string) (crypto.Signer, error) {
 
 // writeKey writes k to the specified path in PEM format.
 // If file does not exists, it will be created with 0600 mod.
+// Parent directories will be created along the way.
 func writeKey(path string, k *ecdsa.PrivateKey) error {
+	if err := mkConfigDirs(); err != nil {
+		return err
+	}
 	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
 		return err
