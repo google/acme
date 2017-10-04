@@ -98,7 +98,7 @@ func runReg(args []string) {
 func ttyPrompt(tos string) bool {
 	fmt.Println("CA requires acceptance of their Terms and Services agreement:")
 	fmt.Println(tos)
-	fmt.Print("Do you accept? (Y/n) ")
+	fmt.Print("Do you accept? (y/N) ")
 	var a string
 	if _, err := fmt.Scanln(&a); err != nil {
 		return false
